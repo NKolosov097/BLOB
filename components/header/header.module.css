@@ -1,0 +1,17 @@
+.header {
+  max-width: 1200px;
+  height: 80px;
+
+  margin: 0 auto;
+  margin-top: 25px;
+
+  text-align: center;
+  font-size: 35px;
+  line-height: 80px;
+
+  box-sizing: border-box;
+}
+
+.content {
+  width: 100%;
+}

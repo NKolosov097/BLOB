@@ -1,0 +1,122 @@
+.wrapper {
+  color: var(--dark-text);
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: center;
+  margin: auto;
+  margin-top: 25px;
+
+  max-width: var(--desktop-width);
+  /* height: calc(100% - var(--header-height-desktop-1)); */
+
+  --border-radius: 50px;
+}
+
+.container {
+  --container-width: 550px;
+  --container-height: 700px;
+
+  width: var(--container-width);
+  height: var(--container-height);
+  padding: 40px 20px;
+
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  text-align: center;
+  justify-content: center;
+
+  letter-spacing: 1px;
+  background-color: var(--background-light);
+  border-radius: var(--border-radius);
+}
+
+.isRegister {
+  --container-height: 760px;
+}
+
+.isRecover {
+  --container-height: 640px;
+}
+
+.header2 {
+  width: 100%;
+  font-family: poppins-medium-blob, sans-serif;
+  font-size: 35px;
+  margin-bottom: 50px;
+}
+
+.header3 {
+  width: 100%;
+  font-family: poppins-light-blob, sans-serif;
+  font-size: 24px;
+
+  margin-bottom: 40px;
+}
+
+.input,
+.input:active {
+  width: 450px;
+  height: 60px;
+  font-family: poppins-medium-blob, sans-serif;
+
+  border-radius: var(--border-radius);
+  padding: 0 25px;
+
+  margin-bottom: 40px;
+
+  background-color: var(--background-dark-theme) !important;
+  -moz-background-color: var(--background-dark-theme) !important;
+  -o-background-color: var(--background-dark-theme) !important;
+  -ms-background-color: var(--background-dark-theme) !important;
+  color: var(--light-text);
+  font-size: 20px;
+  line-height: 35px;
+  letter-spacing: 1px;
+  font-weight: normal;
+
+  transition: all 300ms ease-in-out;
+}
+
+.input:focus {
+  outline: none;
+  -webkit-box-shadow: 6px 6px 8px 2px rgba(30, 30, 30, 0.2);
+  -moz-box-shadow: 6px 6px 8px 2px rgba(30, 30, 30, 0.2);
+  box-shadow: 6px 6px 8px 2px rgba(30, 30, 30, 0.2);
+}
+
+.btnSubmit {
+  width: 250px;
+  height: 80px;
+
+  background-color: #1b1b1b;
+  color: var(--light-text);
+
+  letter-spacing: 1px;
+  font-size: 24px;
+  font-family: poppins-medium-blob, sans-serif;
+
+  margin-top: 50px;
+  border-radius: var(--border-radius);
+
+  transition: all 300ms ease-in-out;
+}
+
+.btnSubmit:hover {
+  background-color: var(--background-light-theme);
+  border: var(--background-light-theme);
+  color: var(--dark-text);
+
+  -webkit-box-shadow: 6px 6px 8px 2px rgba(30, 30, 30, 0.2);
+  -moz-box-shadow: 6px 6px 8px 2px rgba(30, 30, 30, 0.2);
+  box-shadow: 6px 6px 8px 2px rgba(30, 30, 30, 0.2);
+}
+
+.problemsWrapper {
+  margin-top: 60px;
+}
+
+.toRegister {
+  color: var(--dark-text);
+}
