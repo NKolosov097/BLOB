@@ -1,0 +1,26 @@
+{
+  "name": "@blob/web",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "nuxt dev",
+    "build": "nuxt build",
+    "check": "nuxt typecheck",
+    "test:run": "vitest run",
+    "generate:api": "openapi-ts"
+  },
+  "dependencies": {
+    "@nuxtjs/i18n": "10.6.0",
+    "nuxt": "4.5.2",
+    "vue": "3.5.42"
+  },
+  "devDependencies": {
+    "@hey-api/openapi-ts": "0.99.0",
+    "@nuxt/test-utils": "4.3.2",
+    "@vue/test-utils": "2.4.6",
+    "happy-dom": "20.14.5",
+    "typescript": "5.9.2",
+    "vitest": "5.0.0",
+    "vue-tsc": "3.3.11"
+  }
+}

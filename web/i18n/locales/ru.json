@@ -1,0 +1,6 @@
+{
+  "appName": "Blob",
+  "statusTitle": "Состояние сервиса",
+  "statusReady": "Готов",
+  "statusUnavailable": "Недоступен"
+}
