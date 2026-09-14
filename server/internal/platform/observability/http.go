@@ -1,6 +1,7 @@
 package observability
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
@@ -24,12 +25,22 @@ func HTTP(service string, output io.Writer) func(http.Handler) http.Handler {
 	var mu sync.Mutex
 	return func(next http.Handler) http.Handler {
 		recovery := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			response := responseBuffer{header: w.Header().Clone()}
 			defer func() {
 				if recover() != nil {
 					http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 				}
 			}()
-			next.ServeHTTP(w, r)
+			next.ServeHTTP(&response, r)
+			clear(w.Header())
+			for key, values := range response.header {
+				w.Header()[key] = values
+			}
+			if response.status == 0 {
+				response.status = http.StatusOK
+			}
+			w.WriteHeader(response.status)
+			_, _ = w.Write(response.body.Bytes())
 		})
 		access := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			result := httpsnoop.CaptureMetrics(recovery, w, r)
@@ -58,6 +69,26 @@ func HTTP(service string, output io.Writer) func(http.Handler) http.Handler {
 			otelhttp.WithTracerProvider(httpProvider{otel.GetTracerProvider()}),
 			otelhttp.WithMeterProvider(noop.NewMeterProvider()))
 	}
+}
+
+// ponytail: buffer the small non-streaming JSON API; revisit before large or streaming responses.
+type responseBuffer struct {
+	header http.Header
+	status int
+	body   bytes.Buffer
+}
+
+func (w *responseBuffer) Header() http.Header { return w.header }
+func (w *responseBuffer) WriteHeader(status int) {
+	if w.status == 0 {
+		w.status = status
+	}
+}
+func (w *responseBuffer) Write(body []byte) (int, error) {
+	if w.status == 0 {
+		w.status = http.StatusOK
+	}
+	return w.body.Write(body)
 }
 
 func safeMethod(method string) string {

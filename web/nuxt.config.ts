@@ -2,6 +2,7 @@ export default defineNuxtConfig({
   compatibilityDate: '2026-09-14',
   css: ['~/assets/css/main.css'],
   modules: ['@nuxtjs/i18n'],
+  nitro: { rollupConfig: { external: ['@opentelemetry/api'] } },
   runtimeConfig: {
     apiInternalBase: process.env.API_INTERNAL_BASE ?? 'http://127.0.0.1:8080/api/v1',
     public: { apiBase: process.env.NUXT_PUBLIC_API_BASE ?? '/api/v1' },

@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"regexp"
 	"slices"
 	"strings"
@@ -85,11 +86,15 @@ func TestHTTPLogAllowlist(t *testing.T) {
 
 type receiver struct {
 	collector.UnimplementedTraceServiceServer
-	exports chan *collector.ExportTraceServiceRequest
+	exports        chan *collector.ExportTraceServiceRequest
+	partialSuccess string
 }
 
 func (r *receiver) Export(_ context.Context, req *collector.ExportTraceServiceRequest) (*collector.ExportTraceServiceResponse, error) {
 	r.exports <- req
+	if r.partialSuccess != "" {
+		return &collector.ExportTraceServiceResponse{PartialSuccess: &collector.ExportTracePartialSuccess{RejectedSpans: 1, ErrorMessage: r.partialSuccess}}, nil
+	}
 	return &collector.ExportTraceServiceResponse{}, nil
 }
 
@@ -236,7 +241,13 @@ func TestHTTPPanicDoesNotRecordErrorDetails(t *testing.T) {
 		t.Fatal(err)
 	}
 	var logs, serverErrors bytes.Buffer
-	handler := requestid.Middleware(observability.HTTP("blob-api", &logs)(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { panic("panic-secret") })))
+	handler := requestid.Middleware(observability.HTTP("blob-api", &logs)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("X-Partial", "header-secret")
+		w.WriteHeader(http.StatusAccepted)
+		_, _ = w.Write([]byte(`{"private":"body-secret"}`))
+		panic("panic-secret")
+	})))
 	server := httptest.NewUnstartedServer(handler)
 	server.Config.ErrorLog = log.New(&serverErrors, "", 0)
 	server.Start()
@@ -253,6 +264,9 @@ func TestHTTPPanicDoesNotRecordErrorDetails(t *testing.T) {
 	if response.StatusCode != 500 || string(body) != "Internal Server Error\n" {
 		t.Fatalf("unexpected panic response: status=%d", response.StatusCode)
 	}
+	if response.Header.Get("X-Partial") != "" || response.Header.Get("X-Request-ID") == "" {
+		t.Fatal("panic response leaked partial headers or lost request ID")
+	}
 	var access map[string]any
 	if err := json.Unmarshal(logs.Bytes(), &access); err != nil {
 		t.Fatal(err)
@@ -260,7 +274,7 @@ func TestHTTPPanicDoesNotRecordErrorDetails(t *testing.T) {
 	if access["status"] != float64(500) {
 		t.Fatal("panic access status was not 500")
 	}
-	if serverErrors.Len() != 0 || strings.Contains(logs.String()+string(body), "panic-secret") {
+	if serverErrors.Len() != 0 || strings.Contains(logs.String()+string(body), "secret") {
 		t.Fatal("panic details leaked into response or logs")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -279,6 +293,82 @@ func TestHTTPPanicDoesNotRecordErrorDetails(t *testing.T) {
 		}
 	case <-ctx.Done():
 		t.Fatal("panic span was not flushed")
+	}
+}
+
+func TestHTTPRecoveryPreservesNormalResponse(t *testing.T) {
+	shutdown, err := observability.Setup(t.Context(), "blob-api", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer shutdown(context.Background())
+	var logs bytes.Buffer
+	handler := requestid.Middleware(observability.HTTP("blob-api", &logs)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Add("X-Multiple", "first")
+		w.Header().Add("X-Multiple", "second")
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"status":"ok"}`))
+	})))
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/", nil))
+	if recorder.Code != http.StatusCreated || recorder.Body.String() != `{"status":"ok"}` || recorder.Header().Get("Content-Type") != "application/json" || !slices.Equal(recorder.Header().Values("X-Multiple"), []string{"first", "second"}) || recorder.Header().Get("X-Request-ID") == "" {
+		t.Fatal("normal response was changed by recovery")
+	}
+}
+
+func TestSDKConfigDiagnostics(t *testing.T) {
+	if mode := os.Getenv("BLOB_DIAGNOSTIC_TEST"); mode != "" {
+		endpoint := "https://credential-secret@collector.invalid/%zz?token=query-secret"
+		if mode == "exporter" {
+			var receiver *receiver
+			endpoint, receiver = collectorEndpoint(t)
+			receiver.partialSuccess = "collector-secret: https://credential-secret@collector.invalid?token=query-secret"
+		}
+		shutdown, err := observability.Setup(t.Context(), "blob-api", endpoint)
+		if err != nil {
+			t.Fatal("unexpected setup failure")
+		}
+		if mode == "exporter" {
+			_, span := otel.Tracer("test").Start(t.Context(), "test.export")
+			span.End()
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := shutdown(ctx); err != nil {
+			otel.Handle(err)
+		}
+		return
+	}
+	for _, mode := range []string{"config", "exporter"} {
+		t.Run(mode, func(t *testing.T) {
+			command := exec.Command(os.Args[0], "-test.run=^TestSDKConfigDiagnostics$")
+			command.Env = append(os.Environ(), "BLOB_DIAGNOSTIC_TEST="+mode)
+			output, err := command.CombinedOutput()
+			if err != nil {
+				t.Fatalf("diagnostic subprocess failed: %v", err)
+			}
+			if strings.Contains(string(output), "secret") || strings.Contains(string(output), "collector.invalid") {
+				t.Fatal("SDK diagnostic leaked error, endpoint, or attributes")
+			}
+			found := false
+			for _, line := range strings.Split(string(output), "\n") {
+				if !strings.HasPrefix(line, "{") {
+					continue
+				}
+				var event map[string]any
+				if err := json.Unmarshal([]byte(line), &event); err != nil {
+					t.Fatal(err)
+				}
+				if len(event) != 4 || event["event"] != "telemetry_failure" || event["service"] != "blob-api" || event["level"] != "ERROR" {
+					t.Fatal("SDK diagnostic escaped the allowlist")
+				}
+				found = true
+			}
+			if !found {
+				t.Fatal("SDK failure produced no safe diagnostic")
+			}
+		})
 	}
 }
 
