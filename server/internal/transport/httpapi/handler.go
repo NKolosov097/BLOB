@@ -12,9 +12,13 @@ type handler struct {
 	health system.HealthChecker
 }
 
-func NewHandler(health system.HealthChecker) http.Handler {
+func NewHandler(health system.HealthChecker, middleware ...func(http.Handler) http.Handler) http.Handler {
 	strict := NewStrictHandler(handler{health: health}, nil)
-	return requestid.Middleware(HandlerWithOptions(strict, StdHTTPServerOptions{BaseURL: "/api/v1"}))
+	h := HandlerWithOptions(strict, StdHTTPServerOptions{BaseURL: "/api/v1"})
+	for i := len(middleware) - 1; i >= 0; i-- {
+		h = middleware[i](h)
+	}
+	return requestid.Middleware(h)
 }
 
 func (h handler) GetLiveness(ctx context.Context, _ GetLivenessRequestObject) (GetLivenessResponseObject, error) {

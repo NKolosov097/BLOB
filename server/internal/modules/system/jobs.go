@@ -10,6 +10,9 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // Handler must be idempotent: jobs are delivered at least once.
@@ -38,6 +41,13 @@ func (j *Jobs) RunOnce(ctx context.Context) (bool, error) {
 	if err != nil {
 		return false, err
 	}
+	ctx, span := otel.Tracer("blob/system").Start(ctx, "job.run", trace.WithNewRoot())
+	defer func() { span.End() }()
+	kind := "unknown"
+	if job.Kind == "system.noop" {
+		kind = job.Kind
+	}
+	span.SetAttributes(attribute.String("operation", "run"), attribute.String("job.kind", kind), attribute.Bool("success", false))
 	handler, ok := j.handlers[job.Kind]
 	if !ok {
 		return true, j.fail(ctx, job, "unknown_job_kind")
@@ -45,7 +55,9 @@ func (j *Jobs) RunOnce(ctx context.Context) (bool, error) {
 	if err := handler(ctx, job.Payload); err != nil {
 		return true, j.fail(ctx, job, "handler_failed")
 	}
-	return true, j.queries.CompleteJob(ctx, job.ID)
+	err = j.queries.CompleteJob(ctx, job.ID)
+	span.SetAttributes(attribute.Bool("success", err == nil))
+	return true, err
 }
 
 func (j *Jobs) Run(ctx context.Context) error {

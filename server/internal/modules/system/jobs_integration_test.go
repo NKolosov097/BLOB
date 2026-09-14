@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -14,6 +15,10 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"go.opentelemetry.io/otel"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+	"go.opentelemetry.io/otel/trace"
 )
 
 func jobDatabase(t *testing.T) (*pgxpool.Pool, *db.Queries) {
@@ -258,5 +263,53 @@ func TestWorkerReturnsDatabaseFailure(t *testing.T) {
 	pool.Close()
 	if err := NewJobs(queries).Run(t.Context()); err == nil {
 		t.Fatal("closed database did not stop the worker")
+	}
+}
+
+func TestJobTraceStartsIndependentRootAndHidesSecrets(t *testing.T) {
+	for _, kind := range []string{"system.noop", "kind-secret"} {
+		t.Run(kind, func(t *testing.T) {
+			_, queries := jobDatabase(t)
+			enqueue(t, queries, kind, 1)
+			recorder := tracetest.NewSpanRecorder()
+			provider := sdktrace.NewTracerProvider(sdktrace.WithSampler(sdktrace.AlwaysSample()), sdktrace.WithSpanProcessor(recorder))
+			previous := otel.GetTracerProvider()
+			otel.SetTracerProvider(provider)
+			t.Cleanup(func() { otel.SetTracerProvider(previous); _ = provider.Shutdown(context.Background()) })
+			parent := trace.NewSpanContext(trace.SpanContextConfig{TraceID: trace.TraceID{1}, SpanID: trace.SpanID{1}, TraceFlags: trace.FlagsSampled})
+			ctx := trace.ContextWithSpanContext(t.Context(), parent)
+			if claimed, err := NewJobs(queries).RunOnce(ctx); err != nil || !claimed {
+				t.Fatalf("job execution claimed=%t err=%v", claimed, err)
+			}
+			spans := recorder.Ended()
+			if len(spans) != 1 || spans[0].Name() != "job.run" {
+				t.Fatalf("got %d spans, want one job.run", len(spans))
+			}
+			span := spans[0]
+			if span.Parent().IsValid() || span.SpanContext().TraceID() == parent.TraceID() {
+				t.Fatal("worker job inherited producer trace")
+			}
+			attributes := map[string]any{}
+			for _, attr := range span.Attributes() {
+				attributes[string(attr.Key)] = attr.Value.AsInterface()
+			}
+			wantKind := "system.noop"
+			if kind != "system.noop" {
+				wantKind = "unknown"
+			}
+			if len(attributes) != 3 || attributes["operation"] != "run" || attributes["job.kind"] != wantKind || attributes["success"] != (kind == "system.noop") {
+				t.Fatalf("unexpected job span attributes: %v", attributes)
+			}
+			if len(span.Events()) != 0 || len(span.Links()) != 0 || span.Status().Description != "" {
+				t.Fatal("unexpected job span details")
+			}
+			encoded, err := json.Marshal(attributes)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if strings.Contains(string(encoded), "secret") || strings.Contains(string(encoded), "payload") {
+				t.Fatal("job span leaked data")
+			}
+		})
 	}
 }

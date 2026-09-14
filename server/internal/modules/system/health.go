@@ -4,6 +4,9 @@ import (
 	"context"
 	"errors"
 	"time"
+
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 type Pinger interface {
@@ -28,5 +31,9 @@ func (h HealthChecker) Ready(ctx context.Context) error {
 	}
 	ctx, cancel := context.WithTimeout(ctx, time.Second)
 	defer cancel()
-	return h.db.Ping(ctx)
+	ctx, span := otel.Tracer("blob/system").Start(ctx, "postgres.ping")
+	defer func() { span.End() }()
+	err := h.db.Ping(ctx)
+	span.SetAttributes(attribute.String("operation", "ping"), attribute.Bool("success", err == nil))
+	return err
 }
