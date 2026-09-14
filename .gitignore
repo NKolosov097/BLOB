@@ -15,6 +15,7 @@ coverage/
 dist/
 *.test
 *.out
+/.worktrees/
 
 # Editors / OS
 .idea/
