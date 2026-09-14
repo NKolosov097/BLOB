@@ -17,6 +17,7 @@ func TestLoadRejectsMissingDatabaseURL(t *testing.T) {
 
 func TestLoadUsesBoundedHTTPDefaults(t *testing.T) {
 	t.Setenv("DATABASE_URL", "postgres://example")
+	t.Setenv("HTTP_ADDR", "")
 
 	cfg, err := Load()
 	if err != nil {
