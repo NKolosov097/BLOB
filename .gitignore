@@ -1,0 +1,23 @@
+# Previous attempts: preserved locally, excluded from the new implementation.
+/frontend/
+/backend/
+
+# Secrets and local config
+.env
+.env.*
+!.env.example
+
+# Generated runtime artifacts
+node_modules/
+.nuxt/
+.output/
+coverage/
+dist/
+*.test
+*.out
+
+# Editors / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
