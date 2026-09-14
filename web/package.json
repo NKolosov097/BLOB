@@ -6,7 +6,7 @@
     "dev": "nuxt dev",
     "build": "nuxt build",
     "check": "nuxt typecheck",
-    "test:run": "vitest run",
+    "test:run": "vitest run && vitest run --config vitest.e2e.config.ts",
     "generate:api": "openapi-ts"
   },
   "dependencies": {

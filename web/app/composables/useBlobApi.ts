@@ -2,6 +2,7 @@ import { client } from '../api/generated/client.gen'
 
 export async function useBlobApi<T>(path: string): Promise<T> {
   if (import.meta.server) {
+    const { blobApiFetch } = await import('#server/utils/blob-api')
     return blobApiFetch<T>(path)
   }
 
