@@ -1,9 +1,22 @@
+{
+	log {
+		output discard
+	}
+}
+
 :8088 {
+	header -Server
+
 	@api path /api/*
 	handle @api {
 		reverse_proxy api:8080
 	}
 	handle {
 		reverse_proxy web:3000
+	}
+
+	handle_errors {
+		header -Server
+		respond "" {err.status_code}
 	}
 }
