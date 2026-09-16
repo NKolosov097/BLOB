@@ -32,7 +32,7 @@ func RunAPI(ctx context.Context) error {
 	}
 	defer pool.Close()
 	handler := httpapi.NewHandler(system.NewHealthChecker(pool), observability.HTTP(cfg.OTEL.ServiceName, os.Stdout))
-	return httpserver.New(cfg.HTTP, handler).Run(ctx)
+	return httpserver.New(cfg.HTTP, httpserver.Security(handler)).Run(ctx)
 }
 
 func shutdownTelemetry(shutdown func(context.Context) error) {

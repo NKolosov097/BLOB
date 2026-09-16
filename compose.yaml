@@ -1,0 +1,109 @@
+services:
+  postgres:
+    image: postgres:17.11-alpine
+    environment:
+      POSTGRES_DB: blob
+      POSTGRES_USER: blob
+      POSTGRES_PASSWORD: blob
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U blob -d blob"]
+      interval: 2s
+      timeout: 5s
+      retries: 10
+
+  migrate:
+    build:
+      context: ./server
+      target: migration-tools
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgres://blob:blob@postgres:5432/blob?sslmode=disable}
+    command: ["postgres", "${DATABASE_URL:-postgres://blob:blob@postgres:5432/blob?sslmode=disable}", "up"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    build:
+      context: ./server
+      target: application
+      args:
+        TARGET: api
+    environment:
+      APP_ENV: production
+      HTTP_ADDR: :8080
+      DATABASE_URL: postgres://blob:blob@postgres:5432/blob?sslmode=disable
+      OTEL_SERVICE_NAME: blob-api
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    expose:
+      - "8080"
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    cpus: "0.50"
+    mem_limit: 256m
+
+  worker:
+    build:
+      context: ./server
+      target: application
+      args:
+        TARGET: worker
+    environment:
+      APP_ENV: production
+      DATABASE_URL: postgres://blob:blob@postgres:5432/blob?sslmode=disable
+      OTEL_SERVICE_NAME: blob-worker
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    cpus: "0.50"
+    mem_limit: 256m
+
+  web:
+    build:
+      context: .
+      dockerfile: web/Dockerfile
+    environment:
+      API_INTERNAL_BASE: http://api:8080/api/v1
+      NUXT_PUBLIC_API_BASE: /api/v1
+    depends_on:
+      api:
+        condition: service_started
+    expose:
+      - "3000"
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    cpus: "0.50"
+    mem_limit: 512m
+
+  proxy:
+    image: caddy:2.10.2-alpine
+    ports:
+      - "127.0.0.1:8088:8088"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+    depends_on:
+      - api
+      - web
+
+volumes:
+  postgres-data:
