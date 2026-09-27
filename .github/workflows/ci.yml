@@ -1,0 +1,47 @@
+name: ci
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17.11-alpine
+        env:
+          POSTGRES_USER: blob
+          POSTGRES_PASSWORD: blob
+          POSTGRES_DB: blob_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U blob -d blob_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      CI: "true"
+      DATABASE_URL: postgres://blob:blob@127.0.0.1:5432/blob_test?sslmode=disable
+      TEST_DATABASE_URL: postgres://blob:blob@127.0.0.1:5432/blob_test?sslmode=disable
+    steps:
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: .go-version
+          cache-dependency-path: server/go.sum
+      - uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903 # v6.0.0
+        with:
+          node-version-file: .node-version
+      - run: corepack enable
+      - run: corepack prepare pnpm@11.26.0 --activate
+      - run: pnpm install --frozen-lockfile
+      - run: go -C server tool goose -dir migrations postgres "$DATABASE_URL" up
+      - run: pwsh ./scripts/check-generated.ps1
+      - run: pwsh ./scripts/check-actions-pinned.ps1
+      - run: pnpm check
+      - run: pnpm test
+      - run: go -C server build ./cmd/api ./cmd/worker
+      - run: pnpm --dir web build
+      - run: docker compose config --quiet
