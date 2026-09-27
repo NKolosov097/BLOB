@@ -14,6 +14,7 @@ type Querier interface {
 	ClaimJob(ctx context.Context) (Job, error)
 	CompleteJob(ctx context.Context, id pgtype.UUID) error
 	EnqueueJob(ctx context.Context, arg EnqueueJobParams) (Job, error)
+	ExpireJobs(ctx context.Context) error
 	FailJob(ctx context.Context, arg FailJobParams) error
 }
 

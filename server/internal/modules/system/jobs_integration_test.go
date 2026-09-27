@@ -176,6 +176,19 @@ func TestNoopCompletesAndStaleJobIsReclaimed(t *testing.T) {
 	}
 }
 
+func TestExpiredFifthAttemptIsTerminal(t *testing.T) {
+	pool, queries := jobDatabase(t)
+	job := enqueue(t, queries, "system.noop", 1)
+	if _, err := pool.Exec(t.Context(), `UPDATE jobs SET status='running', attempts=5, locked_at=now()-interval '6 minutes' WHERE id=$1`, job.ID); err != nil {
+		t.Fatal(err)
+	}
+	claimed, err := NewJobs(queries).RunOnce(t.Context())
+	if err != nil || claimed {
+		t.Fatalf("exhausted lease claimed=%t, err=%v", claimed, err)
+	}
+	assertJob(t, pool, job.ID, "failed", 5, "lease_expired")
+}
+
 func TestUnknownJobKindUsesSafeCode(t *testing.T) {
 	pool, queries := jobDatabase(t)
 	job := enqueue(t, queries, "private unknown kind", 1)

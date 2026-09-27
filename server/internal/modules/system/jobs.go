@@ -34,6 +34,9 @@ func (j *Jobs) RunOnce(ctx context.Context) (bool, error) {
 	if err := ctx.Err(); err != nil {
 		return false, err
 	}
+	if err := j.queries.ExpireJobs(ctx); err != nil {
+		return false, err
+	}
 	job, err := j.queries.ClaimJob(ctx)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return false, nil

@@ -2,16 +2,21 @@ package database
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+var (
+	ErrInvalidConfig = errors.New("database_config_invalid")
+	ErrUnavailable   = errors.New("database_unavailable")
+)
+
 func Open(ctx context.Context, url string) (*pgxpool.Pool, error) {
 	cfg, err := pgxpool.ParseConfig(url)
 	if err != nil {
-		return nil, fmt.Errorf("parse database config: %w", err)
+		return nil, ErrInvalidConfig
 	}
 	cfg.MaxConns = 20
 	cfg.MinConns = 0
@@ -23,11 +28,11 @@ func Open(ctx context.Context, url string) (*pgxpool.Pool, error) {
 	defer cancel()
 	pool, err := pgxpool.NewWithConfig(connectCtx, cfg)
 	if err != nil {
-		return nil, fmt.Errorf("open database: %w", err)
+		return nil, ErrUnavailable
 	}
 	if err := pool.Ping(connectCtx); err != nil {
 		pool.Close()
-		return nil, fmt.Errorf("ping database: %w", err)
+		return nil, ErrUnavailable
 	}
 	return pool, nil
 }

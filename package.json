@@ -3,7 +3,7 @@
   "private": true,
   "packageManager": "pnpm@11.26.0",
   "scripts": {
-    "generate": "pnpm --dir web generate:api && go -C server generate ./...",
+    "generate": "corepack pnpm --dir web generate:api && go -C server generate ./... && go -C server tool sqlc generate",
     "check:generated": "pwsh ./scripts/check-generated.ps1",
     "check:actions": "pwsh ./scripts/check-actions-pinned.ps1",
     "check": "pnpm --dir web check && go -C server vet ./...",

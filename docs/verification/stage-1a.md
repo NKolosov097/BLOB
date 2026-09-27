@@ -1,8 +1,8 @@
 # Stage 1A verification
 
-Verified on 2026-09-27 against source commit `5487eec3415a4e663a4c7c10f31a50a2fe878b89` on Windows NT 10.0.26200.0. Docker Engine/CLI 29.6.2 and Compose 5.3.1 ran Linux containers. The selected Go toolchain was 1.27.1; the web test image used Node 24.21.0 and pnpm 11.26.0; PostgreSQL reported 17.11.
+Initial verification ran on 2026-09-27 against source commit `5487eec3415a4e663a4c7c10f31a50a2fe878b89` on Windows NT 10.0.26200.0. Docker Engine/CLI 29.6.2 and Compose 5.3.1 ran Linux containers. The selected Go toolchain was 1.27.1; the web test image used Node 24.21.0 and pnpm 11.26.0; PostgreSQL reported 17.11.
 
-The Windows host has Node 24.19.0 and a global pnpm 11.21.0 shim. `corepack pnpm` selects pinned pnpm 11.26.0, but root scripts invoke the older shim internally. Windows Application Control also blocks Rollup's native module. The root script stages were therefore run directly with pinned pnpm, with web checks and tests in the cached Linux test image. The `docker` commands below used Docker Desktop's installed CLI path because it is absent from `PATH`.
+At initial verification, the Windows host had Node 24.19.0 and a global pnpm 11.21.0 shim. `corepack pnpm` selected pinned pnpm 11.26.0, but the root generation script invoked the older shim internally. Windows Application Control also blocked Rollup's native module. The root script stages were therefore run directly with pinned pnpm, with web checks and tests in the cached Linux test image. The `docker` commands below used Docker Desktop's installed CLI path because it was absent from `PATH`.
 
 | Command or equivalent | Exit | Result |
 | --- | ---: | --- |
@@ -51,4 +51,25 @@ The worker consumed one fixed-ID `system.noop` job (`f318a169-861c-4f7d-903a-9ac
 
 `docker compose down` exited 0 without `--volumes`. No Compose containers remained, and the `blob-stage-1a_postgres-data` volume remained available. The disposable integration-test database was stopped and removed separately.
 
-Known limitation: production PaaS deployment is deferred until plan 1G. Remote GitHub Actions execution was not available in this local verification.
+## Final-review verification
+
+On 2026-09-27, the review fixes were verified in the worktree before the fix commit. The final commit and clean-checkout evidence are recorded in the ignored SDD `final-fix-report.md`.
+
+The root generation script now invokes pinned pnpm through Corepack and includes sqlc generation.
+
+| Check | Exit | Result |
+| --- | ---: | --- |
+| `go -C server tool sqlc generate` | 0 | Updated job queries generated successfully. |
+| `powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/check-generated.ps1` with a temporary `DriftProbe` SQL query | 1, expected | Regeneration changed `server/internal/db/querier.go` and `system.sql.go`; the drift gate rejected both. The probe was removed and code regenerated. |
+| `go test ./...` in the pinned Go test image with a disposable migrated PostgreSQL 17.11 database | 0 | Full Go suite passed, including subprocess credential canary and exhausted-lease integration case. |
+| `go vet ./...`; `go build ./cmd/api ./cmd/worker` in the pinned Go image | 0; 0 | Static analysis and both binaries passed. |
+| `pnpm --dir web test:run`; `pnpm --dir web check` in the rebuilt pinned web image | 0; 0 | 14 unit tests, 3 production SSR tests (Russian, English, Arabic), and Nuxt typecheck passed. |
+| `docker compose config --format json` with a temporary OTLP endpoint and overridden host `DATABASE_URL` | 0 | API, worker, and web all received the endpoint; migration, API, and worker retained the same internal database target; worker restart policy rendered as `on-failure`. |
+| `docker compose config --quiet`; `docker compose up --build -d` | 0; 0 | The local stack started with healthy PostgreSQL and successful migration. |
+| Public-origin health and worker outage/recovery smoke | 0 | Healthy live/ready/web returned 200/200/200. With PostgreSQL stopped, live/ready returned 200/503. Compose restarted the worker automatically once; after PostgreSQL recovered, the queued no-op job became `done` with `attempts=1` and readiness returned 200. |
+| Temporary OTLP receiver on the Compose network | 0 | One SSR request produced web fetch, API, and PostgreSQL ping spans with the same trace ID. Only service names, trace IDs, and allowlisted span categories were inspected. The receiver was removed. |
+| `docker compose down`; volume inspection | 0; 0 | The stack stopped without `--volumes`; `blob-stage-1a_postgres-data` remained. The separate disposable test database and network were removed. |
+
+The prior worker smoke above restarted the worker manually after the database outage; the final-review smoke did not. Production PaaS deployment remains deferred until plan 1G. Remote GitHub Actions execution remains an external gate because no remote is configured and no push is authorized.
+
+The generated-code gate also rejects a Git status failure. A temporary clean checkout with mismatched Windows ownership exposed the previous false-green result; the corrected script exited nonzero until that checkout was trusted for the single verification process.

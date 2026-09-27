@@ -14,8 +14,10 @@ import (
 const claimJob = `-- name: ClaimJob :one
 WITH candidate AS (
     SELECT id FROM jobs
-    WHERE (status = 'pending' AND available_at <= now())
-       OR (status = 'running' AND locked_at < now() - interval '5 minutes')
+    WHERE attempts < 5 AND (
+        (status = 'pending' AND available_at <= now())
+        OR (status = 'running' AND locked_at < now() - interval '5 minutes')
+    )
     ORDER BY available_at, created_at
     FOR UPDATE SKIP LOCKED
     LIMIT 1
@@ -88,6 +90,21 @@ func (q *Queries) EnqueueJob(ctx context.Context, arg EnqueueJobParams) (Job, er
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const expireJobs = `-- name: ExpireJobs :exec
+UPDATE jobs
+SET status = 'failed', locked_at = NULL, last_error_code = 'lease_expired', updated_at = now()
+WHERE id IN (
+    SELECT id FROM jobs
+    WHERE status = 'running' AND attempts >= 5 AND locked_at < now() - interval '5 minutes'
+    FOR UPDATE SKIP LOCKED
+)
+`
+
+func (q *Queries) ExpireJobs(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, expireJobs)
+	return err
 }
 
 const failJob = `-- name: FailJob :exec

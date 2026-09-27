@@ -18,8 +18,8 @@ services:
       context: ./server
       target: migration-tools
     environment:
-      DATABASE_URL: ${DATABASE_URL:-postgres://blob:blob@postgres:5432/blob?sslmode=disable}
-    command: ["postgres", "${DATABASE_URL:-postgres://blob:blob@postgres:5432/blob?sslmode=disable}", "up"]
+      DATABASE_URL: postgres://blob:blob@postgres:5432/blob?sslmode=disable
+    command: ["postgres", "postgres://blob:blob@postgres:5432/blob?sslmode=disable", "up"]
     depends_on:
       postgres:
         condition: service_healthy
@@ -35,6 +35,7 @@ services:
       HTTP_ADDR: :8080
       DATABASE_URL: postgres://blob:blob@postgres:5432/blob?sslmode=disable
       OTEL_SERVICE_NAME: blob-api
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -60,6 +61,8 @@ services:
       APP_ENV: production
       DATABASE_URL: postgres://blob:blob@postgres:5432/blob?sslmode=disable
       OTEL_SERVICE_NAME: blob-worker
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+    restart: on-failure
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -80,6 +83,7 @@ services:
     environment:
       NUXT_API_INTERNAL_BASE: http://api:8080/api/v1
       NUXT_PUBLIC_API_BASE: /api/v1
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
     depends_on:
       api:
         condition: service_started

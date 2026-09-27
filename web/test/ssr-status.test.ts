@@ -54,4 +54,18 @@ describe('production SSR status page', () => {
     expect(html).toContain('Готов')
     expect(html).not.toContain('blobApiFetch is not defined')
   })
+
+  it.each([
+    ['/en', 'en-US', 'ltr', 'Service status', 'Ready'],
+    ['/ar', 'ar', 'rtl', 'حالة الخدمة', 'جاهز'],
+  ])('renders localized readiness at %s', async (path, lang, dir, heading, ready) => {
+    const html = await $fetch<string>(path)
+
+    expect(requests).toBe(1)
+    const documentTag = html.match(/<html\b[^>]*>/)?.[0]
+    expect(documentTag).toContain(`lang="${lang}"`)
+    expect(documentTag).toContain(`dir="${dir}"`)
+    expect(html.match(/<h1[^>]*>.*?<\/h1>/s)?.[0]).toContain(heading)
+    expect(html.match(/<p[^>]*role="status"[^>]*>.*?<\/p>/s)?.[0]).toContain(ready)
+  })
 })
