@@ -25,3 +25,5 @@ Open `http://127.0.0.1:8088`.
 - `pnpm check`
 - `pnpm test`
 - `docker compose config --quiet`
+
+See [Stage 1A verification](docs/verification/stage-1a.md) for the full-stack smoke results and host-specific command substitutions.
