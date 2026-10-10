@@ -6,6 +6,7 @@ import (
 	"os"
 	"time"
 
+	"blob/server/internal/modules/identity"
 	"blob/server/internal/modules/system"
 	"blob/server/internal/platform/config"
 	"blob/server/internal/platform/database"
@@ -21,6 +22,10 @@ func RunAPI(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}
+	identityConfig, err := config.LoadIdentity()
+	if err != nil {
+		return fmt.Errorf("load identity config: %w", err)
+	}
 	shutdown, err := observability.Setup(ctx, cfg.OTEL.ServiceName, cfg.OTEL.Endpoint)
 	if err != nil {
 		return fmt.Errorf("setup telemetry: %w", err)
@@ -31,7 +36,7 @@ func RunAPI(ctx context.Context) error {
 		return fmt.Errorf("open database: %w", err)
 	}
 	defer pool.Close()
-	handler := httpapi.NewHandler(system.NewHealthChecker(pool), observability.HTTP(cfg.OTEL.ServiceName, os.Stdout))
+	handler := httpapi.NewHandler(system.NewHealthChecker(pool), identity.NewSessions(pool), identityConfig, observability.HTTP(cfg.OTEL.ServiceName, os.Stdout))
 	return httpserver.New(cfg.HTTP, httpserver.Security(handler)).Run(ctx)
 }
 

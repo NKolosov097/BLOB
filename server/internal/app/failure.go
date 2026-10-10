@@ -13,6 +13,8 @@ func FailureCode(err error) string {
 		return "database_config_invalid"
 	case errors.Is(err, database.ErrUnavailable):
 		return "database_unavailable"
+	case errors.Is(err, config.ErrIdentityConfigInvalid):
+		return "identity_config_invalid"
 	default:
 		return "runtime_failed"
 	}

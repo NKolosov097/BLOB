@@ -11,11 +11,29 @@ import (
 )
 
 type Querier interface {
+	AuthenticateSession(ctx context.Context, arg AuthenticateSessionParams) (AuthenticateSessionRow, error)
 	ClaimJob(ctx context.Context) (Job, error)
 	CompleteJob(ctx context.Context, id pgtype.UUID) error
+	CountActiveDevices(ctx context.Context, userID pgtype.UUID) (int64, error)
 	EnqueueJob(ctx context.Context, arg EnqueueJobParams) (Job, error)
 	ExpireJobs(ctx context.Context) error
 	FailJob(ctx context.Context, arg FailJobParams) error
+	FindOwnedDevice(ctx context.Context, arg FindOwnedDeviceParams) (Device, error)
+	FindOwnedSession(ctx context.Context, arg FindOwnedSessionParams) (Session, error)
+	FindSessionByTokenHash(ctx context.Context, tokenHash []byte) (Session, error)
+	GetDeviceByBinding(ctx context.Context, arg GetDeviceByBindingParams) (Device, error)
+	InsertDevice(ctx context.Context, arg InsertDeviceParams) (Device, error)
+	InsertSession(ctx context.Context, arg InsertSessionParams) (Session, error)
+	ListActiveSessions(ctx context.Context, arg ListActiveSessionsParams) ([]Session, error)
+	ListDevices(ctx context.Context, arg ListDevicesParams) ([]Device, error)
+	LockActiveSession(ctx context.Context, arg LockActiveSessionParams) (Session, error)
+	LockIdentityUser(ctx context.Context, id pgtype.UUID) (User, error)
+	RevokeAllSessions(ctx context.Context, arg RevokeAllSessionsParams) error
+	RevokeDevice(ctx context.Context, arg RevokeDeviceParams) error
+	RevokeDeviceSessions(ctx context.Context, arg RevokeDeviceSessionsParams) error
+	RevokeSession(ctx context.Context, arg RevokeSessionParams) error
+	RotateSessionToken(ctx context.Context, arg RotateSessionTokenParams) (Session, error)
+	TouchDevice(ctx context.Context, arg TouchDeviceParams) error
 }
 
 var _ Querier = (*Queries)(nil)

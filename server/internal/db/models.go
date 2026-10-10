@@ -8,6 +8,17 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type Device struct {
+	ID          pgtype.UUID        `json:"id"`
+	UserID      pgtype.UUID        `json:"user_id"`
+	BindingHash []byte             `json:"binding_hash"`
+	Browser     string             `json:"browser"`
+	Os          string             `json:"os"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	LastSeenAt  pgtype.Timestamptz `json:"last_seen_at"`
+	RevokedAt   pgtype.Timestamptz `json:"revoked_at"`
+}
+
 type Job struct {
 	ID            pgtype.UUID        `json:"id"`
 	Kind          string             `json:"kind"`
@@ -19,4 +30,26 @@ type Job struct {
 	LastErrorCode pgtype.Text        `json:"last_error_code"`
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+}
+
+type Session struct {
+	ID                pgtype.UUID        `json:"id"`
+	UserID            pgtype.UUID        `json:"user_id"`
+	DeviceID          pgtype.UUID        `json:"device_id"`
+	TokenHash         []byte             `json:"token_hash"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	LastSeenAt        pgtype.Timestamptz `json:"last_seen_at"`
+	IdleExpiresAt     pgtype.Timestamptz `json:"idle_expires_at"`
+	AbsoluteExpiresAt pgtype.Timestamptz `json:"absolute_expires_at"`
+	RevokedAt         pgtype.Timestamptz `json:"revoked_at"`
+}
+
+type User struct {
+	ID              pgtype.UUID        `json:"id"`
+	AccessState     string             `json:"access_state"`
+	MfaRequired     bool               `json:"mfa_required"`
+	ProtectionState string             `json:"protection_state"`
+	SecurityVersion int64              `json:"security_version"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
 }
