@@ -321,7 +321,8 @@ func TestJobTraceStartsIndependentRootAndHidesSecrets(t *testing.T) {
 			if kind != "system.noop" {
 				wantKind = "unknown"
 			}
-			if len(attributes) != 3 || attributes["operation"] != "run" || attributes["job.kind"] != wantKind || attributes["success"] != (kind == "system.noop") {
+			if len(attributes) != 4 || attributes["operation"] != "run" || attributes["job.kind"] != wantKind ||
+				attributes["success"] != (kind == "system.noop") || attributes["claim.lost"] != false {
 				t.Fatalf("unexpected job span attributes: %v", attributes)
 			}
 			if len(span.Events()) != 0 || len(span.Links()) != 0 || span.Status().Description != "" {
