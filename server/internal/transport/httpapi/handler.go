@@ -212,7 +212,11 @@ func corsMiddleware(publicOrigin string) func(http.Handler) http.Handler {
 				w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE")
 				w.Header().Set("Access-Control-Allow-Headers", "X-CSRF-Token")
 			}
-			if r.Method == http.MethodOptions {
+			// Answer only a genuine preflight from the trusted origin. Any
+			// other OPTIONS falls through so the router reports its own
+			// 404/405 instead of a blanket 204.
+			if r.Method == http.MethodOptions && r.Header.Get("Access-Control-Request-Method") != "" &&
+				r.Header.Get("Origin") == publicOrigin {
 				w.WriteHeader(http.StatusNoContent)
 				return
 			}

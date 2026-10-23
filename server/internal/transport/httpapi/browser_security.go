@@ -19,7 +19,6 @@ import (
 
 const (
 	cookieSession = "__Host-blob_session"
-	cookieDevice  = "__Host-blob_device"
 	cookieContext = "__Host-blob_context"
 
 	contextTTL   = 24 * time.Hour

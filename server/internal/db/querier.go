@@ -24,8 +24,8 @@ type Querier interface {
 	GetDeviceByBinding(ctx context.Context, arg GetDeviceByBindingParams) (Device, error)
 	InsertDevice(ctx context.Context, arg InsertDeviceParams) (Device, error)
 	InsertSession(ctx context.Context, arg InsertSessionParams) (Session, error)
-	ListActiveSessions(ctx context.Context, arg ListActiveSessionsParams) ([]Session, error)
-	ListDevices(ctx context.Context, arg ListDevicesParams) ([]Device, error)
+	ListActiveSessions(ctx context.Context, arg ListActiveSessionsParams) ([]ListActiveSessionsRow, error)
+	ListDevices(ctx context.Context, arg ListDevicesParams) ([]ListDevicesRow, error)
 	LockActiveSession(ctx context.Context, arg LockActiveSessionParams) (Session, error)
 	LockIdentityUser(ctx context.Context, id pgtype.UUID) (User, error)
 	RevokeAllSessions(ctx context.Context, arg RevokeAllSessionsParams) error

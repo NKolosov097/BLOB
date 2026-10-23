@@ -7,6 +7,7 @@
     "check:generated": "pwsh ./scripts/check-generated.ps1",
     "check:actions": "pwsh ./scripts/check-actions-pinned.ps1",
     "check": "pnpm --dir web check && go -C server vet ./...",
-    "test": "pnpm --dir web test:run && go -C server test ./..."
+    "test": "pnpm --dir web test:run && go -C server test ./...",
+    "test:ci": "pnpm --dir web test:run && go -C server test -race ./..."
   }
 }

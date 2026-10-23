@@ -43,6 +43,16 @@ func newIdentityTestServer(t *testing.T) (*httptest.Server, *identity.Sessions, 
 	return server, sessions, pool
 }
 
+// newTransportTestServer serves the tests that exercise routing, CORS and
+// guard behavior only. They never reach the session service, so they must not
+// require a database to run locally.
+func newTransportTestServer(t *testing.T) *httptest.Server {
+	t.Helper()
+	server := httptest.NewTLSServer(NewHandler(system.NewHealthChecker(nil), nil, identityTestConfig()))
+	t.Cleanup(server.Close)
+	return server
+}
+
 func toPgUUID(id uuid.UUID) pgtype.UUID {
 	return pgtype.UUID{Bytes: id, Valid: true}
 }
@@ -81,7 +91,11 @@ func (c testCase) do(req *http.Request) *http.Response {
 	if err != nil {
 		c.t.Fatal(err)
 	}
-	if resp.StatusCode >= 200 && resp.StatusCode < 300 && req.Method != http.MethodOptions && (strings.Contains(req.URL.Path, "/auth/") || strings.Contains(req.URL.Path, "/identity/")) && resp.Header.Get("Cache-Control") != "no-store" {
+	// Every contract response carries no-store, errors included. Native
+	// router 404/405 replies are text/plain and are outside the contract.
+	contract := resp.StatusCode == http.StatusNoContent ||
+		strings.HasPrefix(resp.Header.Get("Content-Type"), "application/json")
+	if contract && req.Method != http.MethodOptions && (strings.Contains(req.URL.Path, "/auth/") || strings.Contains(req.URL.Path, "/identity/")) && resp.Header.Get("Cache-Control") != "no-store" {
 		c.t.Fatal("identity response missing no-store")
 	}
 	c.t.Cleanup(func() { _ = resp.Body.Close() })
@@ -727,7 +741,7 @@ func TestNilSessionServiceReturnsSafeUnavailableNotPanic(t *testing.T) {
 }
 
 func TestCORSPreflightAndForeignOriginHeaders(t *testing.T) {
-	server, _, _ := newIdentityTestServer(t)
+	server := newTransportTestServer(t)
 	c := testCase{t: t, server: server}
 
 	req := c.request(http.MethodOptions, "/api/v1/identity/sessions")
@@ -820,7 +834,7 @@ func TestDeviceAndAllRevocationRoutes(t *testing.T) {
 }
 
 func TestIdentityHEADAndOverlappingPaths(t *testing.T) {
-	server, _, _ := newIdentityTestServer(t)
+	server := newTransportTestServer(t)
 	c := testCase{t: t, server: server}
 	for _, path := range []string{"/auth/context", "/identity/me", "/identity/sessions", "/identity/devices"} {
 		resp := c.do(c.request(http.MethodHead, "/api/v1"+path))

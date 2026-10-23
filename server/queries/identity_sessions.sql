@@ -55,7 +55,7 @@ WHERE id = sqlc.arg(id)
 RETURNING *;
 
 -- name: ListActiveSessions :many
-SELECT * FROM sessions
+SELECT id, device_id, created_at, last_seen_at, idle_expires_at, absolute_expires_at FROM sessions
 WHERE user_id = sqlc.arg(user_id) AND revoked_at IS NULL
   AND idle_expires_at > sqlc.arg(now) AND absolute_expires_at > sqlc.arg(now)
   AND (created_at < sqlc.arg(after_created_at)
@@ -64,7 +64,7 @@ ORDER BY created_at DESC, id DESC
 LIMIT sqlc.arg(row_limit);
 
 -- name: ListDevices :many
-SELECT * FROM devices
+SELECT id, browser, os, created_at, last_seen_at FROM devices
 WHERE user_id = sqlc.arg(user_id) AND revoked_at IS NULL
 ORDER BY created_at DESC, id DESC
 LIMIT sqlc.arg(row_limit);

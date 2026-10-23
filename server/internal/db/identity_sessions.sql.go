@@ -255,7 +255,7 @@ func (q *Queries) InsertSession(ctx context.Context, arg InsertSessionParams) (S
 }
 
 const listActiveSessions = `-- name: ListActiveSessions :many
-SELECT id, user_id, device_id, token_hash, created_at, last_seen_at, idle_expires_at, absolute_expires_at, revoked_at FROM sessions
+SELECT id, device_id, created_at, last_seen_at, idle_expires_at, absolute_expires_at FROM sessions
 WHERE user_id = $1 AND revoked_at IS NULL
   AND idle_expires_at > $2 AND absolute_expires_at > $2
   AND (created_at < $3
@@ -272,7 +272,16 @@ type ListActiveSessionsParams struct {
 	RowLimit       int32              `json:"row_limit"`
 }
 
-func (q *Queries) ListActiveSessions(ctx context.Context, arg ListActiveSessionsParams) ([]Session, error) {
+type ListActiveSessionsRow struct {
+	ID                pgtype.UUID        `json:"id"`
+	DeviceID          pgtype.UUID        `json:"device_id"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	LastSeenAt        pgtype.Timestamptz `json:"last_seen_at"`
+	IdleExpiresAt     pgtype.Timestamptz `json:"idle_expires_at"`
+	AbsoluteExpiresAt pgtype.Timestamptz `json:"absolute_expires_at"`
+}
+
+func (q *Queries) ListActiveSessions(ctx context.Context, arg ListActiveSessionsParams) ([]ListActiveSessionsRow, error) {
 	rows, err := q.db.Query(ctx, listActiveSessions,
 		arg.UserID,
 		arg.Now,
@@ -284,19 +293,16 @@ func (q *Queries) ListActiveSessions(ctx context.Context, arg ListActiveSessions
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Session
+	var items []ListActiveSessionsRow
 	for rows.Next() {
-		var i Session
+		var i ListActiveSessionsRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.UserID,
 			&i.DeviceID,
-			&i.TokenHash,
 			&i.CreatedAt,
 			&i.LastSeenAt,
 			&i.IdleExpiresAt,
 			&i.AbsoluteExpiresAt,
-			&i.RevokedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -309,7 +315,7 @@ func (q *Queries) ListActiveSessions(ctx context.Context, arg ListActiveSessions
 }
 
 const listDevices = `-- name: ListDevices :many
-SELECT id, user_id, binding_hash, browser, os, created_at, last_seen_at, revoked_at FROM devices
+SELECT id, browser, os, created_at, last_seen_at FROM devices
 WHERE user_id = $1 AND revoked_at IS NULL
 ORDER BY created_at DESC, id DESC
 LIMIT $2
@@ -320,24 +326,29 @@ type ListDevicesParams struct {
 	RowLimit int32       `json:"row_limit"`
 }
 
-func (q *Queries) ListDevices(ctx context.Context, arg ListDevicesParams) ([]Device, error) {
+type ListDevicesRow struct {
+	ID         pgtype.UUID        `json:"id"`
+	Browser    string             `json:"browser"`
+	Os         string             `json:"os"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+	LastSeenAt pgtype.Timestamptz `json:"last_seen_at"`
+}
+
+func (q *Queries) ListDevices(ctx context.Context, arg ListDevicesParams) ([]ListDevicesRow, error) {
 	rows, err := q.db.Query(ctx, listDevices, arg.UserID, arg.RowLimit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Device
+	var items []ListDevicesRow
 	for rows.Next() {
-		var i Device
+		var i ListDevicesRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.UserID,
-			&i.BindingHash,
 			&i.Browser,
 			&i.Os,
 			&i.CreatedAt,
 			&i.LastSeenAt,
-			&i.RevokedAt,
 		); err != nil {
 			return nil, err
 		}
