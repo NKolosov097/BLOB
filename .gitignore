@@ -9,6 +9,7 @@
 
 # Generated runtime artifacts
 node_modules/
+.pnpm-store/
 .nuxt/
 .output/
 coverage/

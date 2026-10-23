@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { GetLivenessData, GetLivenessResponses, GetReadinessData, GetReadinessErrors, GetReadinessResponses } from './types.gen';
+import type { GetAuthContextData, GetAuthContextErrors, GetAuthContextResponses, GetCurrentUserData, GetCurrentUserErrors, GetCurrentUserResponses, GetLivenessData, GetLivenessResponses, GetReadinessData, GetReadinessErrors, GetReadinessResponses, ListDevicesData, ListDevicesErrors, ListDevicesResponses, ListSessionsData, ListSessionsErrors, ListSessionsResponses, LogoutData, LogoutErrors, LogoutResponses, RevokeAllSessionsData, RevokeAllSessionsErrors, RevokeAllSessionsResponses, RevokeDeviceSessionsData, RevokeDeviceSessionsErrors, RevokeDeviceSessionsResponses, RevokeSessionData, RevokeSessionErrors, RevokeSessionResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -21,3 +21,90 @@ export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends 
 export const getLiveness = <ThrowOnError extends boolean = false>(options?: Options<GetLivenessData, ThrowOnError>): RequestResult<GetLivenessResponses, unknown, ThrowOnError> => (options?.client ?? client).get<GetLivenessResponses, unknown, ThrowOnError>({ url: '/health/live', ...options });
 
 export const getReadiness = <ThrowOnError extends boolean = false>(options?: Options<GetReadinessData, ThrowOnError>): RequestResult<GetReadinessResponses, GetReadinessErrors, ThrowOnError> => (options?.client ?? client).get<GetReadinessResponses, GetReadinessErrors, ThrowOnError>({ url: '/health/ready', ...options });
+
+/**
+ * Anonymous allowed; derives session-bound CSRF when a current session is presented. Read-only: issues no database rows.
+ */
+export const getAuthContext = <ThrowOnError extends boolean = false>(options?: Options<GetAuthContextData, ThrowOnError>): RequestResult<GetAuthContextResponses, GetAuthContextErrors, ThrowOnError> => (options?.client ?? client).get<GetAuthContextResponses, GetAuthContextErrors, ThrowOnError>({ url: '/auth/context', ...options });
+
+export const getCurrentUser = <ThrowOnError extends boolean = false>(options?: Options<GetCurrentUserData, ThrowOnError>): RequestResult<GetCurrentUserResponses, GetCurrentUserErrors, ThrowOnError> => (options?.client ?? client).get<GetCurrentUserResponses, GetCurrentUserErrors, ThrowOnError>({
+    security: [{
+            in: 'cookie',
+            name: '__Host-blob_session',
+            type: 'apiKey'
+        }],
+    url: '/identity/me',
+    ...options
+});
+
+/**
+ * Requires exact configured trusted Origin, validated before authentication/CSRF.
+ */
+export const revokeAllSessions = <ThrowOnError extends boolean = false>(options: Options<RevokeAllSessionsData, ThrowOnError>): RequestResult<RevokeAllSessionsResponses, RevokeAllSessionsErrors, ThrowOnError> => (options.client ?? client).delete<RevokeAllSessionsResponses, RevokeAllSessionsErrors, ThrowOnError>({
+    security: [{
+            in: 'cookie',
+            name: '__Host-blob_session',
+            type: 'apiKey'
+        }],
+    url: '/identity/sessions',
+    ...options
+});
+
+export const listSessions = <ThrowOnError extends boolean = false>(options?: Options<ListSessionsData, ThrowOnError>): RequestResult<ListSessionsResponses, ListSessionsErrors, ThrowOnError> => (options?.client ?? client).get<ListSessionsResponses, ListSessionsErrors, ThrowOnError>({
+    security: [{
+            in: 'cookie',
+            name: '__Host-blob_session',
+            type: 'apiKey'
+        }],
+    url: '/identity/sessions',
+    ...options
+});
+
+/**
+ * Requires exact configured trusted Origin, validated before authentication/CSRF.
+ */
+export const revokeSession = <ThrowOnError extends boolean = false>(options: Options<RevokeSessionData, ThrowOnError>): RequestResult<RevokeSessionResponses, RevokeSessionErrors, ThrowOnError> => (options.client ?? client).delete<RevokeSessionResponses, RevokeSessionErrors, ThrowOnError>({
+    security: [{
+            in: 'cookie',
+            name: '__Host-blob_session',
+            type: 'apiKey'
+        }],
+    url: '/identity/sessions/{id}',
+    ...options
+});
+
+export const listDevices = <ThrowOnError extends boolean = false>(options?: Options<ListDevicesData, ThrowOnError>): RequestResult<ListDevicesResponses, ListDevicesErrors, ThrowOnError> => (options?.client ?? client).get<ListDevicesResponses, ListDevicesErrors, ThrowOnError>({
+    security: [{
+            in: 'cookie',
+            name: '__Host-blob_session',
+            type: 'apiKey'
+        }],
+    url: '/identity/devices',
+    ...options
+});
+
+/**
+ * Requires exact configured trusted Origin, validated before authentication/CSRF.
+ */
+export const revokeDeviceSessions = <ThrowOnError extends boolean = false>(options: Options<RevokeDeviceSessionsData, ThrowOnError>): RequestResult<RevokeDeviceSessionsResponses, RevokeDeviceSessionsErrors, ThrowOnError> => (options.client ?? client).delete<RevokeDeviceSessionsResponses, RevokeDeviceSessionsErrors, ThrowOnError>({
+    security: [{
+            in: 'cookie',
+            name: '__Host-blob_session',
+            type: 'apiKey'
+        }],
+    url: '/identity/devices/{id}/sessions',
+    ...options
+});
+
+/**
+ * Requires exact configured trusted Origin, validated before authentication/CSRF. The one access-reducing exception: an inactive session's own CSRF, or a valid anonymous context's CSRF, may also clear the cookie.
+ */
+export const logout = <ThrowOnError extends boolean = false>(options: Options<LogoutData, ThrowOnError>): RequestResult<LogoutResponses, LogoutErrors, ThrowOnError> => (options.client ?? client).post<LogoutResponses, LogoutErrors, ThrowOnError>({
+    security: [{
+            in: 'cookie',
+            name: '__Host-blob_session',
+            type: 'apiKey'
+        }],
+    url: '/auth/logout',
+    ...options
+});

@@ -19,6 +19,48 @@ export type ErrorResponse = {
     };
 };
 
+export type AuthContext = {
+    csrf_token: string;
+    enabled_methods: Array<string>;
+};
+
+export type CurrentUser = {
+    id: string;
+    account_status: 'pending_email' | 'active' | 'restricted' | 'deletion_pending';
+    mfa_required: boolean;
+    security_version: number;
+};
+
+export type Session = {
+    id: string;
+    device_id: string;
+    created_at: string;
+    last_seen_at: string;
+    idle_expires_at: string;
+    absolute_expires_at: string;
+    current: boolean;
+};
+
+export type SessionPage = {
+    items: Array<Session>;
+    next_cursor?: string;
+};
+
+export type Device = {
+    id: string;
+    browser: string;
+    os: string;
+    created_at: string;
+    last_seen_at: string;
+    current: boolean;
+};
+
+export type DevicePage = {
+    items: Array<Device>;
+};
+
+export type CsrfToken = string;
+
 export type GetLivenessData = {
     body?: never;
     path?: never;
@@ -59,3 +101,365 @@ export type GetReadinessResponses = {
 };
 
 export type GetReadinessResponse = GetReadinessResponses[keyof GetReadinessResponses];
+
+export type GetAuthContextData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/auth/context';
+};
+
+export type GetAuthContextErrors = {
+    /**
+     * The request was malformed
+     */
+    400: ErrorResponse;
+    /**
+     * The request body exceeded the allowed size
+     */
+    413: ErrorResponse;
+    /**
+     * An unexpected internal error occurred
+     */
+    500: ErrorResponse;
+    /**
+     * A required dependency is unavailable
+     */
+    503: ErrorResponse;
+};
+
+export type GetAuthContextError = GetAuthContextErrors[keyof GetAuthContextErrors];
+
+export type GetAuthContextResponses = {
+    /**
+     * Anonymous or session-bound browser context
+     */
+    200: AuthContext;
+};
+
+export type GetAuthContextResponse = GetAuthContextResponses[keyof GetAuthContextResponses];
+
+export type GetCurrentUserData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/identity/me';
+};
+
+export type GetCurrentUserErrors = {
+    /**
+     * The request was malformed
+     */
+    400: ErrorResponse;
+    /**
+     * Authentication is required
+     */
+    401: ErrorResponse;
+    /**
+     * The request body exceeded the allowed size
+     */
+    413: ErrorResponse;
+    /**
+     * An unexpected internal error occurred
+     */
+    500: ErrorResponse;
+    /**
+     * A required dependency is unavailable
+     */
+    503: ErrorResponse;
+};
+
+export type GetCurrentUserError = GetCurrentUserErrors[keyof GetCurrentUserErrors];
+
+export type GetCurrentUserResponses = {
+    /**
+     * Current authenticated user
+     */
+    200: CurrentUser;
+};
+
+export type GetCurrentUserResponse = GetCurrentUserResponses[keyof GetCurrentUserResponses];
+
+export type RevokeAllSessionsData = {
+    body?: never;
+    headers: {
+        'X-CSRF-Token': string;
+    };
+    path?: never;
+    query?: never;
+    url: '/identity/sessions';
+};
+
+export type RevokeAllSessionsErrors = {
+    /**
+     * The request was malformed
+     */
+    400: ErrorResponse;
+    /**
+     * Authentication is required
+     */
+    401: ErrorResponse;
+    /**
+     * Origin or CSRF validation failed
+     */
+    403: ErrorResponse;
+    /**
+     * The request body exceeded the allowed size
+     */
+    413: ErrorResponse;
+    /**
+     * An unexpected internal error occurred
+     */
+    500: ErrorResponse;
+    /**
+     * A required dependency is unavailable
+     */
+    503: ErrorResponse;
+};
+
+export type RevokeAllSessionsError = RevokeAllSessionsErrors[keyof RevokeAllSessionsErrors];
+
+export type RevokeAllSessionsResponses = {
+    /**
+     * All sessions revoked
+     */
+    204: void;
+};
+
+export type RevokeAllSessionsResponse = RevokeAllSessionsResponses[keyof RevokeAllSessionsResponses];
+
+export type ListSessionsData = {
+    body?: never;
+    path?: never;
+    query?: {
+        cursor?: string;
+    };
+    url: '/identity/sessions';
+};
+
+export type ListSessionsErrors = {
+    /**
+     * The request was malformed
+     */
+    400: ErrorResponse;
+    /**
+     * Authentication is required
+     */
+    401: ErrorResponse;
+    /**
+     * The request body exceeded the allowed size
+     */
+    413: ErrorResponse;
+    /**
+     * An unexpected internal error occurred
+     */
+    500: ErrorResponse;
+    /**
+     * A required dependency is unavailable
+     */
+    503: ErrorResponse;
+};
+
+export type ListSessionsError = ListSessionsErrors[keyof ListSessionsErrors];
+
+export type ListSessionsResponses = {
+    /**
+     * Active owned sessions
+     */
+    200: SessionPage;
+};
+
+export type ListSessionsResponse = ListSessionsResponses[keyof ListSessionsResponses];
+
+export type RevokeSessionData = {
+    body?: never;
+    headers: {
+        'X-CSRF-Token': string;
+    };
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/identity/sessions/{id}';
+};
+
+export type RevokeSessionErrors = {
+    /**
+     * The request was malformed
+     */
+    400: ErrorResponse;
+    /**
+     * Authentication is required
+     */
+    401: ErrorResponse;
+    /**
+     * Origin or CSRF validation failed
+     */
+    403: ErrorResponse;
+    /**
+     * The target does not exist or is not owned by the caller
+     */
+    404: ErrorResponse;
+    /**
+     * The request body exceeded the allowed size
+     */
+    413: ErrorResponse;
+    /**
+     * An unexpected internal error occurred
+     */
+    500: ErrorResponse;
+    /**
+     * A required dependency is unavailable
+     */
+    503: ErrorResponse;
+};
+
+export type RevokeSessionError = RevokeSessionErrors[keyof RevokeSessionErrors];
+
+export type RevokeSessionResponses = {
+    /**
+     * Session revoked
+     */
+    204: void;
+};
+
+export type RevokeSessionResponse = RevokeSessionResponses[keyof RevokeSessionResponses];
+
+export type ListDevicesData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/identity/devices';
+};
+
+export type ListDevicesErrors = {
+    /**
+     * The request was malformed
+     */
+    400: ErrorResponse;
+    /**
+     * Authentication is required
+     */
+    401: ErrorResponse;
+    /**
+     * The request body exceeded the allowed size
+     */
+    413: ErrorResponse;
+    /**
+     * An unexpected internal error occurred
+     */
+    500: ErrorResponse;
+    /**
+     * A required dependency is unavailable
+     */
+    503: ErrorResponse;
+};
+
+export type ListDevicesError = ListDevicesErrors[keyof ListDevicesErrors];
+
+export type ListDevicesResponses = {
+    /**
+     * Owned device associations
+     */
+    200: DevicePage;
+};
+
+export type ListDevicesResponse = ListDevicesResponses[keyof ListDevicesResponses];
+
+export type RevokeDeviceSessionsData = {
+    body?: never;
+    headers: {
+        'X-CSRF-Token': string;
+    };
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/identity/devices/{id}/sessions';
+};
+
+export type RevokeDeviceSessionsErrors = {
+    /**
+     * The request was malformed
+     */
+    400: ErrorResponse;
+    /**
+     * Authentication is required
+     */
+    401: ErrorResponse;
+    /**
+     * Origin or CSRF validation failed
+     */
+    403: ErrorResponse;
+    /**
+     * The target does not exist or is not owned by the caller
+     */
+    404: ErrorResponse;
+    /**
+     * The request body exceeded the allowed size
+     */
+    413: ErrorResponse;
+    /**
+     * An unexpected internal error occurred
+     */
+    500: ErrorResponse;
+    /**
+     * A required dependency is unavailable
+     */
+    503: ErrorResponse;
+};
+
+export type RevokeDeviceSessionsError = RevokeDeviceSessionsErrors[keyof RevokeDeviceSessionsErrors];
+
+export type RevokeDeviceSessionsResponses = {
+    /**
+     * Device sessions revoked
+     */
+    204: void;
+};
+
+export type RevokeDeviceSessionsResponse = RevokeDeviceSessionsResponses[keyof RevokeDeviceSessionsResponses];
+
+export type LogoutData = {
+    body?: never;
+    headers: {
+        'X-CSRF-Token': string;
+    };
+    path?: never;
+    query?: never;
+    url: '/auth/logout';
+};
+
+export type LogoutErrors = {
+    /**
+     * The request was malformed
+     */
+    400: ErrorResponse;
+    /**
+     * Origin or CSRF validation failed
+     */
+    403: ErrorResponse;
+    /**
+     * The request body exceeded the allowed size
+     */
+    413: ErrorResponse;
+    /**
+     * An unexpected internal error occurred
+     */
+    500: ErrorResponse;
+    /**
+     * A required dependency is unavailable
+     */
+    503: ErrorResponse;
+};
+
+export type LogoutError = LogoutErrors[keyof LogoutErrors];
+
+export type LogoutResponses = {
+    /**
+     * Session cleared
+     */
+    204: void;
+};
+
+export type LogoutResponse = LogoutResponses[keyof LogoutResponses];

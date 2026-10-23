@@ -3,6 +3,7 @@ package observability_test
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"io"
@@ -19,6 +20,7 @@ import (
 	"time"
 
 	"blob/server/internal/modules/system"
+	"blob/server/internal/platform/config"
 	"blob/server/internal/platform/observability"
 	"blob/server/internal/platform/requestid"
 	"blob/server/internal/transport/httpapi"
@@ -127,7 +129,7 @@ func TestHTTPTraceReachesPostgresWithoutSecrets(t *testing.T) {
 	handler := httpapi.NewHandler(system.NewHealthChecker(pingerFunc(func(ctx context.Context) error {
 		pingContext = trace.SpanContextFromContext(ctx)
 		return errors.New("error-secret: password=credential-secret")
-	})), observability.HTTP("blob-api", &logs))
+	})), nil, config.Identity{PublicOrigin: "https://example.test", BrowserKey: [32]byte{1}}, observability.HTTP("blob-api", &logs))
 	const parentTrace = "0123456789abcdef0123456789abcdef"
 	const parentSpan = "0123456789abcdef"
 	for _, path := range []string{"/api/v1/health/ready?token=query-secret", "/private-path?token=query-secret"} {
@@ -141,6 +143,37 @@ func TestHTTPTraceReachesPostgresWithoutSecrets(t *testing.T) {
 		req.Host = "host-secret"
 		req.Header.Set("X-Request-ID", parentTrace)
 		handler.ServeHTTP(httptest.NewRecorder(), req)
+	}
+	identitySecrets := []string{"identity-session-canary", "identity-context-canary", "identity-csrf-canary", "identity-cursor-canary"}
+	key := [32]byte{1}
+	identitySecrets = append(identitySecrets, base64.StdEncoding.EncodeToString(key[:]))
+	var errorBodies strings.Builder
+	for _, test := range []struct {
+		method, path, code string
+		status             int
+	}{
+		{http.MethodDelete, "/api/v1/identity/sessions/not-a-uuid", "invalid_request", http.StatusBadRequest},
+		{http.MethodGet, "/api/v1/identity/sessions?cursor=identity-cursor-canary", "dependency_unavailable", http.StatusServiceUnavailable},
+	} {
+		req := httptest.NewRequest(test.method, test.path, nil)
+		req.Header.Set("Origin", "https://example.test")
+		req.Header.Set("Cookie", "__Host-blob_session=identity-session-canary; __Host-blob_context=identity-context-canary")
+		req.Header.Set("X-CSRF-Token", "identity-csrf-canary")
+		req.Header.Set("Traceparent", "00-"+parentTrace+"-"+parentSpan+"-00")
+		req.Header.Set("X-Request-ID", parentTrace)
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		if rec.Code != test.status || rec.Header().Get("Cache-Control") != "no-store" {
+			t.Fatalf("identity error status=%d headers=%v", rec.Code, rec.Header())
+		}
+		var body httpapi.ErrorResponse
+		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+			t.Fatal(err)
+		}
+		if body.Error.Code != test.code || body.Error.RequestId != parentTrace {
+			t.Fatalf("unsafe identity envelope: %+v", body)
+		}
+		errorBodies.Write(rec.Body.Bytes())
 	}
 	flushCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -162,6 +195,11 @@ func TestHTTPTraceReachesPostgresWithoutSecrets(t *testing.T) {
 			t.Fatalf("telemetry leaked %q", secret)
 		}
 	}
+	for _, secret := range identitySecrets {
+		if strings.Contains(string(encoded)+logs.String()+errorBodies.String(), secret) {
+			t.Fatalf("identity secret leaked: %q", secret)
+		}
+	}
 	var spans []*tracepb.Span
 	for _, resource := range exported.ResourceSpans {
 		if len(resource.Resource.Attributes) != 1 || resource.Resource.Attributes[0].Key != "service.name" {
@@ -171,8 +209,8 @@ func TestHTTPTraceReachesPostgresWithoutSecrets(t *testing.T) {
 			spans = append(spans, scope.Spans...)
 		}
 	}
-	if len(spans) != 3 {
-		t.Fatalf("exported %d spans, want two HTTP and one postgres", len(spans))
+	if len(spans) != 5 {
+		t.Fatalf("exported %d spans, want four HTTP and one postgres", len(spans))
 	}
 	var ping, ready *tracepb.Span
 	for _, span := range spans {

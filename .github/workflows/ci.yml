@@ -41,7 +41,7 @@ jobs:
       - run: pwsh ./scripts/check-generated.ps1
       - run: pwsh ./scripts/check-actions-pinned.ps1
       - run: pnpm check
-      - run: pnpm test
+      - run: pnpm test:ci
       - run: go -C server build ./cmd/api ./cmd/worker
       - run: pnpm --dir web build
       - run: docker compose config --quiet

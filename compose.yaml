@@ -36,6 +36,8 @@ services:
       DATABASE_URL: postgres://blob:blob@postgres:5432/blob?sslmode=disable
       OTEL_SERVICE_NAME: blob-api
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      AUTH_PUBLIC_ORIGIN: ${AUTH_PUBLIC_ORIGIN:-https://localhost:8443}
+      AUTH_BROWSER_KEY: ${AUTH_BROWSER_KEY:-}
     depends_on:
       migrate:
         condition: service_completed_successfully

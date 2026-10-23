@@ -11,14 +11,42 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
 	"path"
 	"strings"
+	"time"
 
 	"github.com/getkin/kin-openapi/openapi3"
+	"github.com/oapi-codegen/runtime"
+	openapi_types "github.com/oapi-codegen/runtime/types"
 )
+
+// Defines values for CurrentUserAccountStatus.
+const (
+	Active          CurrentUserAccountStatus = "active"
+	DeletionPending CurrentUserAccountStatus = "deletion_pending"
+	PendingEmail    CurrentUserAccountStatus = "pending_email"
+	Restricted      CurrentUserAccountStatus = "restricted"
+)
+
+// Valid indicates whether the value is a known member of the CurrentUserAccountStatus enum.
+func (e CurrentUserAccountStatus) Valid() bool {
+	switch e {
+	case Active:
+		return true
+	case DeletionPending:
+		return true
+	case PendingEmail:
+		return true
+	case Restricted:
+		return true
+	default:
+		return false
+	}
+}
 
 // Defines values for HealthResponseStatus.
 const (
@@ -33,6 +61,38 @@ func (e HealthResponseStatus) Valid() bool {
 	default:
 		return false
 	}
+}
+
+// AuthContext defines model for AuthContext.
+type AuthContext struct {
+	CsrfToken      string   `json:"csrf_token"`
+	EnabledMethods []string `json:"enabled_methods"`
+}
+
+// CurrentUser defines model for CurrentUser.
+type CurrentUser struct {
+	AccountStatus   CurrentUserAccountStatus `json:"account_status"`
+	Id              openapi_types.UUID       `json:"id"`
+	MfaRequired     bool                     `json:"mfa_required"`
+	SecurityVersion int64                    `json:"security_version"`
+}
+
+// CurrentUserAccountStatus defines model for CurrentUser.AccountStatus.
+type CurrentUserAccountStatus string
+
+// Device defines model for Device.
+type Device struct {
+	Browser    string             `json:"browser"`
+	CreatedAt  time.Time          `json:"created_at"`
+	Current    bool               `json:"current"`
+	Id         openapi_types.UUID `json:"id"`
+	LastSeenAt time.Time          `json:"last_seen_at"`
+	Os         string             `json:"os"`
+}
+
+// DevicePage defines model for DevicePage.
+type DevicePage struct {
+	Items []Device `json:"items"`
 }
 
 // ErrorResponse defines model for ErrorResponse.
@@ -53,14 +113,104 @@ type HealthResponse struct {
 // HealthResponseStatus defines model for HealthResponse.Status.
 type HealthResponseStatus string
 
+// Session defines model for Session.
+type Session struct {
+	AbsoluteExpiresAt time.Time          `json:"absolute_expires_at"`
+	CreatedAt         time.Time          `json:"created_at"`
+	Current           bool               `json:"current"`
+	DeviceId          openapi_types.UUID `json:"device_id"`
+	Id                openapi_types.UUID `json:"id"`
+	IdleExpiresAt     time.Time          `json:"idle_expires_at"`
+	LastSeenAt        time.Time          `json:"last_seen_at"`
+}
+
+// SessionPage defines model for SessionPage.
+type SessionPage struct {
+	Items      []Session `json:"items"`
+	NextCursor *string   `json:"next_cursor,omitempty"`
+}
+
+// CsrfToken defines model for CsrfToken.
+type CsrfToken = string
+
+// AuthenticationRequired defines model for AuthenticationRequired.
+type AuthenticationRequired = ErrorResponse
+
+// DependencyUnavailable defines model for DependencyUnavailable.
+type DependencyUnavailable = ErrorResponse
+
+// Forbidden defines model for Forbidden.
+type Forbidden = ErrorResponse
+
+// InternalError defines model for InternalError.
+type InternalError = ErrorResponse
+
+// InvalidRequest defines model for InvalidRequest.
+type InvalidRequest = ErrorResponse
+
+// NotFound defines model for NotFound.
+type NotFound = ErrorResponse
+
+// RequestTooLarge defines model for RequestTooLarge.
+type RequestTooLarge = ErrorResponse
+
+// LogoutParams defines parameters for Logout.
+type LogoutParams struct {
+	XCSRFToken CsrfToken `json:"X-CSRF-Token"`
+}
+
+// RevokeDeviceSessionsParams defines parameters for RevokeDeviceSessions.
+type RevokeDeviceSessionsParams struct {
+	XCSRFToken CsrfToken `json:"X-CSRF-Token"`
+}
+
+// RevokeAllSessionsParams defines parameters for RevokeAllSessions.
+type RevokeAllSessionsParams struct {
+	XCSRFToken CsrfToken `json:"X-CSRF-Token"`
+}
+
+// ListSessionsParams defines parameters for ListSessions.
+type ListSessionsParams struct {
+	Cursor *string `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
+// RevokeSessionParams defines parameters for RevokeSession.
+type RevokeSessionParams struct {
+	XCSRFToken CsrfToken `json:"X-CSRF-Token"`
+}
+
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
+
+	// (GET /auth/context)
+	GetAuthContext(w http.ResponseWriter, r *http.Request)
+
+	// (POST /auth/logout)
+	Logout(w http.ResponseWriter, r *http.Request, params LogoutParams)
 
 	// (GET /health/live)
 	GetLiveness(w http.ResponseWriter, r *http.Request)
 
 	// (GET /health/ready)
 	GetReadiness(w http.ResponseWriter, r *http.Request)
+
+	// (GET /identity/devices)
+	ListDevices(w http.ResponseWriter, r *http.Request)
+
+	// (DELETE /identity/devices/{id}/sessions)
+	RevokeDeviceSessions(w http.ResponseWriter, r *http.Request, id openapi_types.UUID, params RevokeDeviceSessionsParams)
+
+	// (GET /identity/me)
+	GetCurrentUser(w http.ResponseWriter, r *http.Request)
+
+	// (DELETE /identity/sessions)
+	RevokeAllSessions(w http.ResponseWriter, r *http.Request, params RevokeAllSessionsParams)
+
+	// (GET /identity/sessions)
+	ListSessions(w http.ResponseWriter, r *http.Request, params ListSessionsParams)
+
+	// (DELETE /identity/sessions/{id})
+	RevokeSession(w http.ResponseWriter, r *http.Request, id openapi_types.UUID, params RevokeSessionParams)
 }
 
 // ServerInterfaceWrapper converts contexts to parameters.
@@ -71,6 +221,65 @@ type ServerInterfaceWrapper struct {
 }
 
 type MiddlewareFunc func(http.Handler) http.Handler
+
+// GetAuthContext operation middleware
+func (siw *ServerInterfaceWrapper) GetAuthContext(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetAuthContext(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// Logout operation middleware
+func (siw *ServerInterfaceWrapper) Logout(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params LogoutParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken CsrfToken
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = XCSRFToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-CSRF-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-CSRF-Token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.Logout(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
 
 // GetLiveness operation middleware
 func (siw *ServerInterfaceWrapper) GetLiveness(w http.ResponseWriter, r *http.Request) {
@@ -91,6 +300,220 @@ func (siw *ServerInterfaceWrapper) GetReadiness(w http.ResponseWriter, r *http.R
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetReadiness(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListDevices operation middleware
+func (siw *ServerInterfaceWrapper) ListDevices(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListDevices(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RevokeDeviceSessions operation middleware
+func (siw *ServerInterfaceWrapper) RevokeDeviceSessions(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params RevokeDeviceSessionsParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken CsrfToken
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = XCSRFToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-CSRF-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-CSRF-Token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RevokeDeviceSessions(w, r, id, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetCurrentUser operation middleware
+func (siw *ServerInterfaceWrapper) GetCurrentUser(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetCurrentUser(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RevokeAllSessions operation middleware
+func (siw *ServerInterfaceWrapper) RevokeAllSessions(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params RevokeAllSessionsParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken CsrfToken
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = XCSRFToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-CSRF-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-CSRF-Token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RevokeAllSessions(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListSessions operation middleware
+func (siw *ServerInterfaceWrapper) ListSessions(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListSessionsParams
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListSessions(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RevokeSession operation middleware
+func (siw *ServerInterfaceWrapper) RevokeSession(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params RevokeSessionParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken CsrfToken
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = XCSRFToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-CSRF-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-CSRF-Token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RevokeSession(w, r, id, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -222,8 +645,197 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/health/live", wrapper.GetLiveness)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/health/ready", wrapper.GetReadiness)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/auth/context", wrapper.GetAuthContext)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/identity/me", wrapper.GetCurrentUser)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/identity/sessions", wrapper.RevokeAllSessions)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/identity/sessions", wrapper.ListSessions)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/identity/sessions/{id}", wrapper.RevokeSession)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/identity/devices", wrapper.ListDevices)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/identity/devices/{id}/sessions", wrapper.RevokeDeviceSessions)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/auth/logout", wrapper.Logout)
 
 	return m
+}
+
+type AuthenticationRequiredJSONResponse ErrorResponse
+
+type DependencyUnavailableJSONResponse ErrorResponse
+
+type ForbiddenJSONResponse ErrorResponse
+
+type InternalErrorJSONResponse ErrorResponse
+
+type InvalidRequestJSONResponse ErrorResponse
+
+type NotFoundJSONResponse ErrorResponse
+
+type RequestTooLargeJSONResponse ErrorResponse
+
+type GetAuthContextRequestObject struct {
+}
+
+type GetAuthContextResponseObject interface {
+	VisitGetAuthContextResponse(w http.ResponseWriter) error
+}
+
+type GetAuthContext200JSONResponse AuthContext
+
+func (response GetAuthContext200JSONResponse) VisitGetAuthContextResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetAuthContext400JSONResponse struct{ InvalidRequestJSONResponse }
+
+func (response GetAuthContext400JSONResponse) VisitGetAuthContextResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetAuthContext413JSONResponse struct{ RequestTooLargeJSONResponse }
+
+func (response GetAuthContext413JSONResponse) VisitGetAuthContextResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(413)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetAuthContext500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response GetAuthContext500JSONResponse) VisitGetAuthContextResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetAuthContext503JSONResponse struct {
+	DependencyUnavailableJSONResponse
+}
+
+func (response GetAuthContext503JSONResponse) VisitGetAuthContextResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type LogoutRequestObject struct {
+	Params LogoutParams
+}
+
+type LogoutResponseObject interface {
+	VisitLogoutResponse(w http.ResponseWriter) error
+}
+
+type Logout204Response struct {
+}
+
+func (response Logout204Response) VisitLogoutResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type Logout400JSONResponse struct{ InvalidRequestJSONResponse }
+
+func (response Logout400JSONResponse) VisitLogoutResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type Logout403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response Logout403JSONResponse) VisitLogoutResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type Logout413JSONResponse struct{ RequestTooLargeJSONResponse }
+
+func (response Logout413JSONResponse) VisitLogoutResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(413)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type Logout500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response Logout500JSONResponse) VisitLogoutResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type Logout503JSONResponse struct {
+	DependencyUnavailableJSONResponse
+}
+
+func (response Logout503JSONResponse) VisitLogoutResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
 }
 
 type GetLivenessRequestObject struct {
@@ -282,14 +894,666 @@ func (response GetReadiness503JSONResponse) VisitGetReadinessResponse(w http.Res
 	return err
 }
 
+type ListDevicesRequestObject struct {
+}
+
+type ListDevicesResponseObject interface {
+	VisitListDevicesResponse(w http.ResponseWriter) error
+}
+
+type ListDevices200JSONResponse DevicePage
+
+func (response ListDevices200JSONResponse) VisitListDevicesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListDevices400JSONResponse struct{ InvalidRequestJSONResponse }
+
+func (response ListDevices400JSONResponse) VisitListDevicesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListDevices401JSONResponse struct {
+	AuthenticationRequiredJSONResponse
+}
+
+func (response ListDevices401JSONResponse) VisitListDevicesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListDevices413JSONResponse struct{ RequestTooLargeJSONResponse }
+
+func (response ListDevices413JSONResponse) VisitListDevicesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(413)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListDevices500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response ListDevices500JSONResponse) VisitListDevicesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListDevices503JSONResponse struct {
+	DependencyUnavailableJSONResponse
+}
+
+func (response ListDevices503JSONResponse) VisitListDevicesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RevokeDeviceSessionsRequestObject struct {
+	Id     openapi_types.UUID `json:"id"`
+	Params RevokeDeviceSessionsParams
+}
+
+type RevokeDeviceSessionsResponseObject interface {
+	VisitRevokeDeviceSessionsResponse(w http.ResponseWriter) error
+}
+
+type RevokeDeviceSessions204Response struct {
+}
+
+func (response RevokeDeviceSessions204Response) VisitRevokeDeviceSessionsResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type RevokeDeviceSessions400JSONResponse struct{ InvalidRequestJSONResponse }
+
+func (response RevokeDeviceSessions400JSONResponse) VisitRevokeDeviceSessionsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RevokeDeviceSessions401JSONResponse struct {
+	AuthenticationRequiredJSONResponse
+}
+
+func (response RevokeDeviceSessions401JSONResponse) VisitRevokeDeviceSessionsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RevokeDeviceSessions403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response RevokeDeviceSessions403JSONResponse) VisitRevokeDeviceSessionsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RevokeDeviceSessions404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response RevokeDeviceSessions404JSONResponse) VisitRevokeDeviceSessionsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RevokeDeviceSessions413JSONResponse struct{ RequestTooLargeJSONResponse }
+
+func (response RevokeDeviceSessions413JSONResponse) VisitRevokeDeviceSessionsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(413)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RevokeDeviceSessions500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response RevokeDeviceSessions500JSONResponse) VisitRevokeDeviceSessionsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RevokeDeviceSessions503JSONResponse struct {
+	DependencyUnavailableJSONResponse
+}
+
+func (response RevokeDeviceSessions503JSONResponse) VisitRevokeDeviceSessionsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetCurrentUserRequestObject struct {
+}
+
+type GetCurrentUserResponseObject interface {
+	VisitGetCurrentUserResponse(w http.ResponseWriter) error
+}
+
+type GetCurrentUser200JSONResponse CurrentUser
+
+func (response GetCurrentUser200JSONResponse) VisitGetCurrentUserResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetCurrentUser400JSONResponse struct{ InvalidRequestJSONResponse }
+
+func (response GetCurrentUser400JSONResponse) VisitGetCurrentUserResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetCurrentUser401JSONResponse struct {
+	AuthenticationRequiredJSONResponse
+}
+
+func (response GetCurrentUser401JSONResponse) VisitGetCurrentUserResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetCurrentUser413JSONResponse struct{ RequestTooLargeJSONResponse }
+
+func (response GetCurrentUser413JSONResponse) VisitGetCurrentUserResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(413)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetCurrentUser500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response GetCurrentUser500JSONResponse) VisitGetCurrentUserResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetCurrentUser503JSONResponse struct {
+	DependencyUnavailableJSONResponse
+}
+
+func (response GetCurrentUser503JSONResponse) VisitGetCurrentUserResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RevokeAllSessionsRequestObject struct {
+	Params RevokeAllSessionsParams
+}
+
+type RevokeAllSessionsResponseObject interface {
+	VisitRevokeAllSessionsResponse(w http.ResponseWriter) error
+}
+
+type RevokeAllSessions204Response struct {
+}
+
+func (response RevokeAllSessions204Response) VisitRevokeAllSessionsResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type RevokeAllSessions400JSONResponse struct{ InvalidRequestJSONResponse }
+
+func (response RevokeAllSessions400JSONResponse) VisitRevokeAllSessionsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RevokeAllSessions401JSONResponse struct {
+	AuthenticationRequiredJSONResponse
+}
+
+func (response RevokeAllSessions401JSONResponse) VisitRevokeAllSessionsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RevokeAllSessions403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response RevokeAllSessions403JSONResponse) VisitRevokeAllSessionsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RevokeAllSessions413JSONResponse struct{ RequestTooLargeJSONResponse }
+
+func (response RevokeAllSessions413JSONResponse) VisitRevokeAllSessionsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(413)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RevokeAllSessions500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response RevokeAllSessions500JSONResponse) VisitRevokeAllSessionsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RevokeAllSessions503JSONResponse struct {
+	DependencyUnavailableJSONResponse
+}
+
+func (response RevokeAllSessions503JSONResponse) VisitRevokeAllSessionsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListSessionsRequestObject struct {
+	Params ListSessionsParams
+}
+
+type ListSessionsResponseObject interface {
+	VisitListSessionsResponse(w http.ResponseWriter) error
+}
+
+type ListSessions200JSONResponse SessionPage
+
+func (response ListSessions200JSONResponse) VisitListSessionsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListSessions400JSONResponse struct{ InvalidRequestJSONResponse }
+
+func (response ListSessions400JSONResponse) VisitListSessionsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListSessions401JSONResponse struct {
+	AuthenticationRequiredJSONResponse
+}
+
+func (response ListSessions401JSONResponse) VisitListSessionsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListSessions413JSONResponse struct{ RequestTooLargeJSONResponse }
+
+func (response ListSessions413JSONResponse) VisitListSessionsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(413)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListSessions500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response ListSessions500JSONResponse) VisitListSessionsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListSessions503JSONResponse struct {
+	DependencyUnavailableJSONResponse
+}
+
+func (response ListSessions503JSONResponse) VisitListSessionsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RevokeSessionRequestObject struct {
+	Id     openapi_types.UUID `json:"id"`
+	Params RevokeSessionParams
+}
+
+type RevokeSessionResponseObject interface {
+	VisitRevokeSessionResponse(w http.ResponseWriter) error
+}
+
+type RevokeSession204Response struct {
+}
+
+func (response RevokeSession204Response) VisitRevokeSessionResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type RevokeSession400JSONResponse struct{ InvalidRequestJSONResponse }
+
+func (response RevokeSession400JSONResponse) VisitRevokeSessionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RevokeSession401JSONResponse struct {
+	AuthenticationRequiredJSONResponse
+}
+
+func (response RevokeSession401JSONResponse) VisitRevokeSessionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RevokeSession403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response RevokeSession403JSONResponse) VisitRevokeSessionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RevokeSession404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response RevokeSession404JSONResponse) VisitRevokeSessionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RevokeSession413JSONResponse struct{ RequestTooLargeJSONResponse }
+
+func (response RevokeSession413JSONResponse) VisitRevokeSessionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(413)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RevokeSession500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response RevokeSession500JSONResponse) VisitRevokeSessionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RevokeSession503JSONResponse struct {
+	DependencyUnavailableJSONResponse
+}
+
+func (response RevokeSession503JSONResponse) VisitRevokeSessionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 // StrictServerInterface represents all server handlers.
 type StrictServerInterface interface {
+
+	// (GET /auth/context)
+	GetAuthContext(ctx context.Context, request GetAuthContextRequestObject) (GetAuthContextResponseObject, error)
+
+	// (POST /auth/logout)
+	Logout(ctx context.Context, request LogoutRequestObject) (LogoutResponseObject, error)
 
 	// (GET /health/live)
 	GetLiveness(ctx context.Context, request GetLivenessRequestObject) (GetLivenessResponseObject, error)
 
 	// (GET /health/ready)
 	GetReadiness(ctx context.Context, request GetReadinessRequestObject) (GetReadinessResponseObject, error)
+
+	// (GET /identity/devices)
+	ListDevices(ctx context.Context, request ListDevicesRequestObject) (ListDevicesResponseObject, error)
+
+	// (DELETE /identity/devices/{id}/sessions)
+	RevokeDeviceSessions(ctx context.Context, request RevokeDeviceSessionsRequestObject) (RevokeDeviceSessionsResponseObject, error)
+
+	// (GET /identity/me)
+	GetCurrentUser(ctx context.Context, request GetCurrentUserRequestObject) (GetCurrentUserResponseObject, error)
+
+	// (DELETE /identity/sessions)
+	RevokeAllSessions(ctx context.Context, request RevokeAllSessionsRequestObject) (RevokeAllSessionsResponseObject, error)
+
+	// (GET /identity/sessions)
+	ListSessions(ctx context.Context, request ListSessionsRequestObject) (ListSessionsResponseObject, error)
+
+	// (DELETE /identity/sessions/{id})
+	RevokeSession(ctx context.Context, request RevokeSessionRequestObject) (RevokeSessionResponseObject, error)
 }
 
 type StrictHandlerFunc func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error)
@@ -329,6 +1593,56 @@ type strictHandler struct {
 	ssi         StrictServerInterface
 	middlewares []StrictMiddlewareFunc
 	options     StrictHTTPServerOptions
+}
+
+// GetAuthContext operation middleware
+func (sh *strictHandler) GetAuthContext(w http.ResponseWriter, r *http.Request) {
+	var request GetAuthContextRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetAuthContext(ctx, request.(GetAuthContextRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetAuthContext")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetAuthContextResponseObject); ok {
+		if err := validResponse.VisitGetAuthContextResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// Logout operation middleware
+func (sh *strictHandler) Logout(w http.ResponseWriter, r *http.Request, params LogoutParams) {
+	var request LogoutRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.Logout(ctx, request.(LogoutRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "Logout")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(LogoutResponseObject); ok {
+		if err := validResponse.VisitLogoutResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
 }
 
 // GetLiveness operation middleware
@@ -379,19 +1693,192 @@ func (sh *strictHandler) GetReadiness(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// ListDevices operation middleware
+func (sh *strictHandler) ListDevices(w http.ResponseWriter, r *http.Request) {
+	var request ListDevicesRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListDevices(ctx, request.(ListDevicesRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListDevices")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListDevicesResponseObject); ok {
+		if err := validResponse.VisitListDevicesResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RevokeDeviceSessions operation middleware
+func (sh *strictHandler) RevokeDeviceSessions(w http.ResponseWriter, r *http.Request, id openapi_types.UUID, params RevokeDeviceSessionsParams) {
+	var request RevokeDeviceSessionsRequestObject
+
+	request.Id = id
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RevokeDeviceSessions(ctx, request.(RevokeDeviceSessionsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RevokeDeviceSessions")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RevokeDeviceSessionsResponseObject); ok {
+		if err := validResponse.VisitRevokeDeviceSessionsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetCurrentUser operation middleware
+func (sh *strictHandler) GetCurrentUser(w http.ResponseWriter, r *http.Request) {
+	var request GetCurrentUserRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetCurrentUser(ctx, request.(GetCurrentUserRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetCurrentUser")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetCurrentUserResponseObject); ok {
+		if err := validResponse.VisitGetCurrentUserResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RevokeAllSessions operation middleware
+func (sh *strictHandler) RevokeAllSessions(w http.ResponseWriter, r *http.Request, params RevokeAllSessionsParams) {
+	var request RevokeAllSessionsRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RevokeAllSessions(ctx, request.(RevokeAllSessionsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RevokeAllSessions")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RevokeAllSessionsResponseObject); ok {
+		if err := validResponse.VisitRevokeAllSessionsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListSessions operation middleware
+func (sh *strictHandler) ListSessions(w http.ResponseWriter, r *http.Request, params ListSessionsParams) {
+	var request ListSessionsRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListSessions(ctx, request.(ListSessionsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListSessions")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListSessionsResponseObject); ok {
+		if err := validResponse.VisitListSessionsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RevokeSession operation middleware
+func (sh *strictHandler) RevokeSession(w http.ResponseWriter, r *http.Request, id openapi_types.UUID, params RevokeSessionParams) {
+	var request RevokeSessionRequestObject
+
+	request.Id = id
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RevokeSession(ctx, request.(RevokeSessionRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RevokeSession")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RevokeSessionResponseObject); ok {
+		if err := validResponse.VisitRevokeSessionResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // Base64 encoded, compressed with deflate, json marshaled OpenAPI spec.
 // Stored as a slice of fixed-width chunks rather than one concatenated
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"xJRBi9tADIX/ilF7NLG3oZe5bWlpF3oIe11CUTxKou1kZjqSDSH4v5cZb8ju1im0FHrKIOVJ33sIn6AL",
-	"hxg8eRUwJ5BuTwcsz08phXRPEoMXygW0lpWDR7dKIVJSJgGzRSdUQ3xWOgFl7R9qumDLGj1GAgOiif0O",
-	"xhq2TM7K9WmaeqrPsrB5pE6z7EAiuJsfmehHT6Lf2M60n/qcyIJ5mLgu416I17/sfSWegljP4H0hdLr/",
-	"y3xFUfvyIt8f8qLw/dmWK06eVDPQYw3st6GEwepy74MLm+p2dQc1DJSEgwcDN4t20Wb6EMljZDCwXLSL",
-	"JdQQUfeFqNkXZ43jodjakeafjI/Z3p0FA59Jv/JAnkRKolMKRf+ubadz8Eq+SDFGx10RN48S/OVQ8+tt",
-	"oi0YeNNcLrmZutK8CrkYtSRd4qiTo1UKHYlULBUW4vwXxZ2UwI6idIB1rp1tJUJ7/J2ve0LL/9/YR4rk",
-	"LfmOSSpMVE3gYw3v2+U/43j5kZjBuK3OF1jZM9Exp917HJAdbty1zMcahFI+PjAPJ+iTAwMNRm6GGxjX",
-	"488BAA==",
+	"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",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

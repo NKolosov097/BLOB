@@ -33,7 +33,281 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /auth/context:
+    get:
+      operationId: getAuthContext
+      tags: [identity]
+      security: []
+      description: >-
+        Anonymous allowed; derives session-bound CSRF when a current session
+        is presented. Read-only: issues no database rows.
+      responses:
+        "200":
+          description: Anonymous or session-bound browser context
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthContext"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "413":
+          $ref: "#/components/responses/RequestTooLarge"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/DependencyUnavailable"
+  /identity/me:
+    get:
+      operationId: getCurrentUser
+      tags: [identity]
+      security:
+        - SessionCookie: []
+      responses:
+        "200":
+          description: Current authenticated user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CurrentUser"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/AuthenticationRequired"
+        "413":
+          $ref: "#/components/responses/RequestTooLarge"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/DependencyUnavailable"
+  /identity/sessions:
+    get:
+      operationId: listSessions
+      tags: [identity]
+      security:
+        - SessionCookie: []
+      parameters:
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 1024
+      responses:
+        "200":
+          description: Active owned sessions
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionPage"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/AuthenticationRequired"
+        "413":
+          $ref: "#/components/responses/RequestTooLarge"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/DependencyUnavailable"
+    delete:
+      operationId: revokeAllSessions
+      tags: [identity]
+      security:
+        - SessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/CsrfToken"
+      description: >-
+        Requires exact configured trusted Origin, validated before
+        authentication/CSRF.
+      responses:
+        "204":
+          description: All sessions revoked
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/AuthenticationRequired"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "413":
+          $ref: "#/components/responses/RequestTooLarge"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/DependencyUnavailable"
+  /identity/sessions/{id}:
+    delete:
+      operationId: revokeSession
+      tags: [identity]
+      security:
+        - SessionCookie: []
+      description: >-
+        Requires exact configured trusted Origin, validated before
+        authentication/CSRF.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: "#/components/parameters/CsrfToken"
+      responses:
+        "204":
+          description: Session revoked
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/AuthenticationRequired"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "413":
+          $ref: "#/components/responses/RequestTooLarge"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/DependencyUnavailable"
+  /identity/devices:
+    get:
+      operationId: listDevices
+      tags: [identity]
+      security:
+        - SessionCookie: []
+      responses:
+        "200":
+          description: Owned device associations
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DevicePage"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/AuthenticationRequired"
+        "413":
+          $ref: "#/components/responses/RequestTooLarge"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/DependencyUnavailable"
+  /identity/devices/{id}/sessions:
+    delete:
+      operationId: revokeDeviceSessions
+      tags: [identity]
+      security:
+        - SessionCookie: []
+      description: >-
+        Requires exact configured trusted Origin, validated before
+        authentication/CSRF.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: "#/components/parameters/CsrfToken"
+      responses:
+        "204":
+          description: Device sessions revoked
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/AuthenticationRequired"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "413":
+          $ref: "#/components/responses/RequestTooLarge"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/DependencyUnavailable"
+  /auth/logout:
+    post:
+      operationId: logout
+      tags: [identity]
+      security:
+        - SessionCookie: []
+        - {}
+      description: >-
+        Requires exact configured trusted Origin, validated before
+        authentication/CSRF. The one access-reducing exception: an inactive
+        session's own CSRF, or a valid anonymous context's CSRF, may also
+        clear the cookie.
+      parameters:
+        - $ref: "#/components/parameters/CsrfToken"
+      responses:
+        "204":
+          description: Session cleared
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "413":
+          $ref: "#/components/responses/RequestTooLarge"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/DependencyUnavailable"
 components:
+  securitySchemes:
+    SessionCookie:
+      type: apiKey
+      in: cookie
+      name: __Host-blob_session
+  parameters:
+    CsrfToken:
+      name: X-CSRF-Token
+      in: header
+      required: true
+      schema:
+        type: string
+  responses:
+    InvalidRequest:
+      description: The request was malformed
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    AuthenticationRequired:
+      description: Authentication is required
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    Forbidden:
+      description: Origin or CSRF validation failed
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    NotFound:
+      description: The target does not exist or is not owned by the caller
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    RequestTooLarge:
+      description: The request body exceeded the allowed size
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    InternalError:
+      description: An unexpected internal error occurred
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    DependencyUnavailable:
+      description: A required dependency is unavailable
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
   schemas:
     HealthResponse:
       type: object
@@ -59,3 +333,65 @@ components:
             fields:
               type: object
               additionalProperties: true
+    AuthContext:
+      type: object
+      additionalProperties: false
+      required: [csrf_token, enabled_methods]
+      properties:
+        csrf_token: { type: string }
+        enabled_methods:
+          type: array
+          items: { type: string }
+    CurrentUser:
+      type: object
+      additionalProperties: false
+      required: [id, account_status, mfa_required, security_version]
+      properties:
+        id: { type: string, format: uuid }
+        account_status:
+          type: string
+          enum: [pending_email, active, restricted, deletion_pending]
+        mfa_required: { type: boolean }
+        security_version: { type: integer, format: int64 }
+    Session:
+      type: object
+      additionalProperties: false
+      required: [id, device_id, created_at, last_seen_at, idle_expires_at, absolute_expires_at, current]
+      properties:
+        id: { type: string, format: uuid }
+        device_id: { type: string, format: uuid }
+        created_at: { type: string, format: date-time }
+        last_seen_at: { type: string, format: date-time }
+        idle_expires_at: { type: string, format: date-time }
+        absolute_expires_at: { type: string, format: date-time }
+        current: { type: boolean }
+    SessionPage:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Session"
+        next_cursor: { type: string }
+    Device:
+      type: object
+      additionalProperties: false
+      required: [id, browser, os, created_at, last_seen_at, current]
+      properties:
+        id: { type: string, format: uuid }
+        browser: { type: string }
+        os: { type: string }
+        created_at: { type: string, format: date-time }
+        last_seen_at: { type: string, format: date-time }
+        current: { type: boolean }
+    DevicePage:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Device"
