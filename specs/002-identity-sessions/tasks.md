@@ -1,6 +1,6 @@
 # Tasks: Stage 1B Identity and Sessions
 
-**Input**: [spec.md](spec.md), [plan.md](plan.md), [increments/01-sessions.md](increments/01-sessions.md), [contracts/identity.md](contracts/identity.md), [data-model.md](data-model.md), [research.md](research.md)
+**Input**: [spec.md](spec.md), [plan.md](plan.md), [increments/01-sessions.md](increments/01-sessions.md), [increments/02-email-password.md](increments/02-email-password.md), [contracts/identity.md](contracts/identity.md), [data-model.md](data-model.md), [research.md](research.md)
 
 **Status**: T001–T017 complete for the first backend slice; see increments/01-convergence.md for review and verification evidence. The later backlog has been corrected against [analysis.md](analysis.md) findings A01–A08 and is now structurally executable, but each phase still requires its own scoped brief, analysis gate and verification before implementation. SMS/live email providers and public auth domains remain external deployment gates (see plan.md "SMS/provider policy" and "Live delivery" notes) — do not enable live sends or claim provider/browser acceptance until those gates are explicitly satisfied outside this repo.
 
@@ -30,22 +30,22 @@ Follows increments/01-sessions.md exactly. No login/registration route exists ye
 
 ## Phase 2: Increment 2 — Email/Password Registration, Login and First Usable Journey (US1, US5)
 
-Delivers the first journey a person can complete in a browser. Email UI, its three locales and the delivery infrastructure every later method reuses belong here, not in phases 7–8 (finding A06).
+Follows [increments/02-email-password.md](increments/02-email-password.md) exactly. Delivers the first journey a person can complete in a browser. Email UI, its three locales and the delivery infrastructure every later method reuses belong here, not in phases 7–8 (finding A06).
 
 ### Delivery infrastructure (prerequisite for every challenge-sending method, finding A05)
 
-- [ ] T056 (US1) Add worker fencing and a handler-registration seam: `claim_token` migration under `server/migrations/`, claim/complete/fail queries in `server/queries/system.sql`, regenerated `server/internal/db/*`, exported registration in `server/internal/modules/system/jobs.go`, wiring in `server/internal/app/worker.go`. Completion and failure require a matching live claim; handler execution is bounded below the lease
-- [ ] T057 (US1) Add `auth_deliveries` per data-model.md: migration, queries in `server/queries/identity_delivery.sql`, encrypted destination/body material with key version, unique `provider_key`, pending/sending/sent/failed/unknown/cancelled statuses, cost reservation before any external effect, secret erasure at consumption/expiry/terminal processing. Jobs carry only the delivery ID. Local deterministic delivery is the development provider
-- [ ] T062 (US1) Add `auth_requests` idempotency per data-model.md: migration, queries and the shared helper in `server/internal/modules/identity/`. Pre-authentication keys bind browser context plus purpose/target digest; authenticated keys bind user/operation/body HMAC. Store references, never secret response bodies
+- [ ] T056 (US1) Add worker fencing and a handler-registration seam: `claim_token` in `server/migrations/00003_jobs_claim_token.sql`, claim/complete/fail queries in `server/queries/system.sql`, regenerated `server/internal/db/*`, exported registration in `server/internal/modules/system/jobs.go`, wiring in `server/internal/app/worker.go`. Completion and failure require a matching live claim; handler execution is bounded below the lease
+- [ ] T057 (US1) Add `auth_deliveries` per data-model.md: part of the shared `server/migrations/00004_identity_email.sql`, queries in `server/queries/identity_delivery.sql`, encrypted destination/body material with key version, unique `provider_key`, pending/sending/sent/failed/unknown/cancelled statuses, cost reservation before any external effect, secret erasure at consumption/expiry/terminal processing. Jobs carry only the delivery ID. Local deterministic delivery is the development provider
+- [ ] T062 (US1) Add `auth_requests` idempotency per data-model.md: part of the shared `server/migrations/00004_identity_email.sql`, queries and the helper in `server/internal/modules/identity/idempotency.go`. Pre-authentication keys bind browser context plus purpose/target digest; authenticated keys bind user/operation/body HMAC. Store references, never secret response bodies
 
 ### Backend
 
 - [ ] T018 (US1) Extend `api/openapi.yaml` with register, login, verify-email and resend endpoints per contracts/identity.md
-- [ ] T019 (US1) Migration creating `login_identities`, `auth_challenges` and `auth_buckets` per data-model.md. Do not add email or password columns to `users`; `users` gains only the access/protection/security fields the model already names (finding A03)
+- [ ] T019 (US1) Create `server/migrations/00004_identity_email.sql` with `login_identities`, `auth_challenges`, `auth_buckets`, `auth_deliveries` and `auth_requests` per data-model.md, up/down in dependency order. Do not add email or password columns to `users`; `users` gains only the access/protection/security fields the model already names (finding A03)
 - [ ] T020 (US1) Add queries to `server/queries/identity_email.sql` for account creation, `login_identities` lookup by comparison key, and atomic `auth_challenges` issue/consume with the `auth_buckets` charge in one transaction; regenerate `server/internal/db/*`
 - [ ] T021 (US1) Implement Argon2id hashing with benchmarked parameters and the Pwned Passwords padded-range check in `server/internal/modules/identity/password.go`, failing closed for new passwords, per research.md and plan.md "Password policy"
 - [ ] T022 (US1) Implement email-verification challenge issuance in `server/internal/modules/identity/email.go`: challenge creation, bucket charge, `auth_deliveries` record and job enqueue commit in one transaction; resend cancels unsent deliveries, keeps the family attempt budget and invalidates the prior proof
-- [ ] T023 (US1) Implement the login use case in `server/internal/modules/identity/email.go`: credential verification, `access_state` gate (`pending_email` blocks full access), then `identity.Sessions.Issue`. Record `first_factor_at` and the method on the issued session
+- [ ] T023 (US1) Implement the login use case in `server/internal/modules/identity/email.go`: credential verification, `access_state` gate (`pending_email` blocks full access), then `identity.Sessions.Issue`. Session proof metadata is not added here; it arrives with T063 in increment 3
 - [ ] T024 (US1) Implement handlers in `server/internal/transport/httpapi/identity_email.go` for register/login/verify-email/resend with generic anti-enumeration responses and the existing safe-error envelope; regenerate `api.gen.go` and `web/app/api/generated/*`
 - [ ] T025 (US1) Integration and HTTP tests: duplicate registration cannot replace password material, unverified-access denial, resend/consume races, stale-worker completion rejected by the claim token, ambiguous provider outcome leaves the code invalid, bounded delivery retry, password length and compromised-password boundaries, idempotent replay returns a safe completed/conflict result without reproducing a session token
 
