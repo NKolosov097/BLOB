@@ -30,6 +30,7 @@ type Job struct {
 	LastErrorCode pgtype.Text        `json:"last_error_code"`
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+	ClaimToken    pgtype.UUID        `json:"claim_token"`
 }
 
 type Session struct {
