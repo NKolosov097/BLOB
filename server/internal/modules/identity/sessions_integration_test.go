@@ -942,7 +942,11 @@ func TestIssueTransactionRollsBackWithoutOrphanDevice(t *testing.T) {
 	userID := createUser(t, pool, "active")
 
 	constraint := pgx.Identifier{"issue_rollback_" + uuid.NewString()}.Sanitize()
-	if _, err := pool.Exec(t.Context(), `ALTER TABLE sessions ADD CONSTRAINT `+constraint+` CHECK (user_id <> '`+userID.String()+`'::uuid)`); err != nil {
+	// NOT VALID keeps the ACCESS EXCLUSIVE lock to the catalog update: the
+	// constraint still rejects this user's inserts, but PostgreSQL skips the
+	// full-table validation scan that would block other packages sharing the
+	// test database.
+	if _, err := pool.Exec(t.Context(), `ALTER TABLE sessions ADD CONSTRAINT `+constraint+` CHECK (user_id <> '`+userID.String()+`'::uuid) NOT VALID`); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {

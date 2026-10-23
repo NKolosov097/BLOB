@@ -25,7 +25,6 @@ import (
 const (
 	IdleSessionTTL     = 7 * 24 * time.Hour
 	AbsoluteSessionTTL = 30 * 24 * time.Hour
-	DeviceCookieTTL    = 90 * 24 * time.Hour
 
 	maxActiveDevices = 100
 	sessionPageSize  = 50
