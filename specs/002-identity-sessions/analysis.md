@@ -42,3 +42,7 @@ All five in-scope requirement areas have executable tasks and detailed acceptanc
 - No current-slice constitution violation after A01/A02 correction. No unmapped task in T001-T017. Full-feature task coverage is not endorsed.
 - Real PostgreSQL tests must execute, not skip. Browser/SSR/live-provider outcomes are not claimed for the backend-only slice.
 - Proceed with T001-T017 after corrections, verify and converge against increment 01. Do not execute later backlog entries until corrected and analyzed for their own scope.
+
+## Resolution
+
+Date: 2026-10-23. A01 and A02 were already applied to tasks.md and to the increment 1 source before that slice was accepted. A03-A08 are now applied to the phase 2-8 backlog in [tasks.md](tasks.md): model-accurate record names, globally unique verified Google ownership on `login_identities`, explicit delivery and worker-fencing tasks, the first usable email journey and its locales moved into increment 2, MFA-pending gating and session proof metadata added to increment 3, concrete file paths and story labels throughout, the phase 3 to phase 4 prerequisite recorded, and a per-phase analysis and convergence gate in place of the single process task. The backlog is structurally executable; each phase still needs its own scoped brief before implementation.
