@@ -4,16 +4,23 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"time"
 
 	"blob/server/internal/db"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 )
+
+// handlerTimeout bounds one handler run well below the five-minute lease, so
+// a stuck handler releases the job for reclaim instead of holding it until the
+// lease expires. The remaining margin covers the completion write.
+const handlerTimeout = 2 * time.Minute
 
 // Handler must be idempotent: jobs are delivered at least once.
 type Handler func(context.Context, json.RawMessage) error
@@ -29,6 +36,19 @@ func NewJobs(queries *db.Queries) *Jobs {
 	}}
 }
 
+// Register adds a job kind at composition time. It is not safe to call once
+// Run has started; composition roots register every handler up front.
+func (j *Jobs) Register(kind string, handler Handler) error {
+	if kind == "" || handler == nil {
+		return errors.New("system: job kind and handler are required")
+	}
+	if _, taken := j.handlers[kind]; taken {
+		return fmt.Errorf("system: job kind %q already registered", kind)
+	}
+	j.handlers[kind] = handler
+	return nil
+}
+
 // ponytail: fixed 5-minute lease; add heartbeat before introducing handlers that can legitimately run longer
 func (j *Jobs) RunOnce(ctx context.Context) (bool, error) {
 	if err := ctx.Err(); err != nil {
@@ -37,7 +57,12 @@ func (j *Jobs) RunOnce(ctx context.Context) (bool, error) {
 	if err := j.queries.ExpireJobs(ctx); err != nil {
 		return false, err
 	}
-	job, err := j.queries.ClaimJob(ctx)
+	claim, err := uuid.NewV7()
+	if err != nil {
+		return false, err
+	}
+	claimToken := pgtype.UUID{Bytes: claim, Valid: true}
+	job, err := j.queries.ClaimJob(ctx, claimToken)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return false, nil
 	}
@@ -46,21 +71,28 @@ func (j *Jobs) RunOnce(ctx context.Context) (bool, error) {
 	}
 	ctx, span := otel.Tracer("blob/system").Start(ctx, "job.run", trace.WithNewRoot())
 	defer func() { span.End() }()
+	handler, known := j.handlers[job.Kind]
 	kind := "unknown"
-	if job.Kind == "system.noop" {
+	if known {
 		kind = job.Kind
 	}
 	span.SetAttributes(attribute.String("operation", "run"), attribute.String("job.kind", kind), attribute.Bool("success", false))
-	handler, ok := j.handlers[job.Kind]
-	if !ok {
-		return true, j.fail(ctx, job, "unknown_job_kind")
+	if !known {
+		return true, j.fail(ctx, span, job, claimToken, "unknown_job_kind")
 	}
-	if err := handler(ctx, job.Payload); err != nil {
-		return true, j.fail(ctx, job, "handler_failed")
+	handlerCtx, cancel := context.WithTimeout(ctx, handlerTimeout)
+	defer cancel()
+	if err := handler(handlerCtx, job.Payload); err != nil {
+		return true, j.fail(ctx, span, job, claimToken, "handler_failed")
 	}
-	err = j.queries.CompleteJob(ctx, job.ID)
-	span.SetAttributes(attribute.Bool("success", err == nil))
-	return true, err
+	rows, err := j.queries.CompleteJob(ctx, db.CompleteJobParams{ID: job.ID, ClaimToken: claimToken})
+	if err != nil {
+		return true, err
+	}
+	// Zero rows means another worker reclaimed the expired lease and now owns
+	// the outcome. This worker's result is void, not an error.
+	span.SetAttributes(attribute.Bool("claim.lost", rows == 0), attribute.Bool("success", rows == 1))
+	return true, nil
 }
 
 func (j *Jobs) Run(ctx context.Context) error {
@@ -83,11 +115,17 @@ func (j *Jobs) Run(ctx context.Context) error {
 	return nil
 }
 
-func (j *Jobs) fail(ctx context.Context, job db.Job, code string) error {
+func (j *Jobs) fail(ctx context.Context, span trace.Span, job db.Job, claimToken pgtype.UUID, code string) error {
 	if code != "unknown_job_kind" && code != "handler_failed" {
 		return errors.New("invalid job error code")
 	}
-	return j.queries.FailJob(ctx, db.FailJobParams{
-		ID: job.ID, LastErrorCode: pgtype.Text{String: code, Valid: true},
+	rows, err := j.queries.FailJob(ctx, db.FailJobParams{
+		ID: job.ID, ClaimToken: claimToken,
+		LastErrorCode: pgtype.Text{String: code, Valid: true},
 	})
+	if err != nil {
+		return err
+	}
+	span.SetAttributes(attribute.Bool("claim.lost", rows == 0))
+	return nil
 }

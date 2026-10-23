@@ -12,12 +12,12 @@ import (
 
 type Querier interface {
 	AuthenticateSession(ctx context.Context, arg AuthenticateSessionParams) (AuthenticateSessionRow, error)
-	ClaimJob(ctx context.Context) (Job, error)
-	CompleteJob(ctx context.Context, id pgtype.UUID) error
+	ClaimJob(ctx context.Context, claimToken pgtype.UUID) (Job, error)
+	CompleteJob(ctx context.Context, arg CompleteJobParams) (int64, error)
 	CountActiveDevices(ctx context.Context, userID pgtype.UUID) (int64, error)
 	EnqueueJob(ctx context.Context, arg EnqueueJobParams) (Job, error)
 	ExpireJobs(ctx context.Context) error
-	FailJob(ctx context.Context, arg FailJobParams) error
+	FailJob(ctx context.Context, arg FailJobParams) (int64, error)
 	FindOwnedDevice(ctx context.Context, arg FindOwnedDeviceParams) (Device, error)
 	FindOwnedSession(ctx context.Context, arg FindOwnedSessionParams) (Session, error)
 	FindSessionByTokenHash(ctx context.Context, tokenHash []byte) (Session, error)

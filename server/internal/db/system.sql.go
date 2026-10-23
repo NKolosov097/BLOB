@@ -23,13 +23,13 @@ WITH candidate AS (
     LIMIT 1
 )
 UPDATE jobs
-SET status = 'running', attempts = attempts + 1, locked_at = now(), updated_at = now()
+SET status = 'running', attempts = attempts + 1, locked_at = now(), claim_token = $1, updated_at = now()
 WHERE id = (SELECT id FROM candidate)
-RETURNING id, kind, payload, status, attempts, available_at, locked_at, last_error_code, created_at, updated_at
+RETURNING id, kind, payload, status, attempts, available_at, locked_at, last_error_code, created_at, updated_at, claim_token
 `
 
-func (q *Queries) ClaimJob(ctx context.Context) (Job, error) {
-	row := q.db.QueryRow(ctx, claimJob)
+func (q *Queries) ClaimJob(ctx context.Context, claimToken pgtype.UUID) (Job, error) {
+	row := q.db.QueryRow(ctx, claimJob, claimToken)
 	var i Job
 	err := row.Scan(
 		&i.ID,
@@ -42,24 +42,33 @@ func (q *Queries) ClaimJob(ctx context.Context) (Job, error) {
 		&i.LastErrorCode,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ClaimToken,
 	)
 	return i, err
 }
 
-const completeJob = `-- name: CompleteJob :exec
-UPDATE jobs SET status = 'done', locked_at = NULL, last_error_code = NULL, updated_at = now()
-WHERE id = $1 AND status = 'running'
+const completeJob = `-- name: CompleteJob :execrows
+UPDATE jobs SET status = 'done', locked_at = NULL, claim_token = NULL, last_error_code = NULL, updated_at = now()
+WHERE id = $1 AND claim_token = $2 AND status = 'running'
 `
 
-func (q *Queries) CompleteJob(ctx context.Context, id pgtype.UUID) error {
-	_, err := q.db.Exec(ctx, completeJob, id)
-	return err
+type CompleteJobParams struct {
+	ID         pgtype.UUID `json:"id"`
+	ClaimToken pgtype.UUID `json:"claim_token"`
+}
+
+func (q *Queries) CompleteJob(ctx context.Context, arg CompleteJobParams) (int64, error) {
+	result, err := q.db.Exec(ctx, completeJob, arg.ID, arg.ClaimToken)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const enqueueJob = `-- name: EnqueueJob :one
 INSERT INTO jobs (id, kind, payload, status, available_at)
 VALUES ($1, $2, $3, 'pending', $4)
-RETURNING id, kind, payload, status, attempts, available_at, locked_at, last_error_code, created_at, updated_at
+RETURNING id, kind, payload, status, attempts, available_at, locked_at, last_error_code, created_at, updated_at, claim_token
 `
 
 type EnqueueJobParams struct {
@@ -88,13 +97,14 @@ func (q *Queries) EnqueueJob(ctx context.Context, arg EnqueueJobParams) (Job, er
 		&i.LastErrorCode,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ClaimToken,
 	)
 	return i, err
 }
 
 const expireJobs = `-- name: ExpireJobs :exec
 UPDATE jobs
-SET status = 'failed', locked_at = NULL, last_error_code = 'lease_expired', updated_at = now()
+SET status = 'failed', locked_at = NULL, claim_token = NULL, last_error_code = 'lease_expired', updated_at = now()
 WHERE id IN (
     SELECT id FROM jobs
     WHERE status = 'running' AND attempts >= 5 AND locked_at < now() - interval '5 minutes'
@@ -107,22 +117,27 @@ func (q *Queries) ExpireJobs(ctx context.Context) error {
 	return err
 }
 
-const failJob = `-- name: FailJob :exec
+const failJob = `-- name: FailJob :execrows
 UPDATE jobs
 SET status = CASE WHEN attempts >= 5 THEN 'failed' ELSE 'pending' END,
     available_at = CASE WHEN attempts >= 5 THEN available_at ELSE now() + make_interval(secs => LEAST(300, attempts * attempts)) END,
     locked_at = NULL,
-    last_error_code = $2,
+    claim_token = NULL,
+    last_error_code = $1,
     updated_at = now()
-WHERE id = $1 AND status = 'running'
+WHERE id = $2 AND claim_token = $3 AND status = 'running'
 `
 
 type FailJobParams struct {
-	ID            pgtype.UUID `json:"id"`
 	LastErrorCode pgtype.Text `json:"last_error_code"`
+	ID            pgtype.UUID `json:"id"`
+	ClaimToken    pgtype.UUID `json:"claim_token"`
 }
 
-func (q *Queries) FailJob(ctx context.Context, arg FailJobParams) error {
-	_, err := q.db.Exec(ctx, failJob, arg.ID, arg.LastErrorCode)
-	return err
+func (q *Queries) FailJob(ctx context.Context, arg FailJobParams) (int64, error) {
+	result, err := q.db.Exec(ctx, failJob, arg.LastErrorCode, arg.ID, arg.ClaimToken)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
